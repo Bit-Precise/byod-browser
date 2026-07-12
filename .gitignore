@@ -1,0 +1,24 @@
+# Build outputs
+/build/out/
+/build/tmp/
+*.o
+*.obj
+*.pyc
+__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Local overrides
+*.local
+.env.local
+
+# Superpowers SDD ledger (project-scoped scratch)
+/.superpowers/

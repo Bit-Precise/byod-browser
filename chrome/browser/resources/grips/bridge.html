@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BYOD Exam</title>
+    <link rel="preconnect" href="https://exam.cs.ac.cn" crossorigin>
+    <link rel="stylesheet" href="bridge.css">
+  </head>
+  <body>
+    <div id="bridge-loading" role="status" aria-live="polite">
+      <div class="bridge-spinner" aria-hidden="true"></div>
+      <div>正在连接考试服务…</div>
+    </div>
+    <iframe id="exam-app" title="BYOD exam service"></iframe>
+    <script type="module" src="bridge.js"></script>
+  </body>
+</html>

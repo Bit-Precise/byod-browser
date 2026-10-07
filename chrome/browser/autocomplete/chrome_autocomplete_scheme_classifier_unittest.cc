@@ -5,6 +5,7 @@
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/fake_service_worker_context.h"
 #include "content/public/test/test_storage_partition.h"
@@ -56,6 +57,11 @@ TEST_F(ChromeAutocompleteSchemeClassifierTest, DevToolsUrl) {
   GURL url("devtools://foo");
   // An internal scheme should also be recognized as a URL.
   EXPECT_EQ(scheme_classifier_->GetInputTypeForScheme(url.GetScheme()),
+            metrics::OmniboxInputType::URL);
+}
+
+TEST_F(ChromeAutocompleteSchemeClassifierTest, GripsUrl) {
+  EXPECT_EQ(scheme_classifier_->GetInputTypeForScheme(chrome::kGripsScheme),
             metrics::OmniboxInputType::URL);
 }
 

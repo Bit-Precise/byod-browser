@@ -139,6 +139,18 @@ struct CustomProxyConfig {
   HttpRequestHeaders connect_tunnel_headers;
 };
 
+// Per-profile BYOD exam tunnel state. The trusted browser bridge encodes the
+// explicit tunnel host list in |source_host| as a comma-separated string.
+struct ByodTunnelConfig {
+  string source_host;
+  string proxy_host;
+  uint16 proxy_port;
+  string endpoint_id;
+  string ticket;
+  array<uint8> nonce;
+  array<uint8> proof;
+};
+
 // Observer of custom proxy connections, especially for when errors occur.
 interface CustomProxyConnectionObserver {
   // Called when use of |bad_proxy| fails due to |net_error|. |net_error| is the
@@ -1938,4 +1950,10 @@ interface NetworkContext {
 
   // Updates the variations headers to be used for requests.
   SetVariationsHeaders(variations.mojom.VariationsHeaders? variations_headers);
+
+  // Installs or clears the BYOD exam tunnel for this network context. Only
+  // trusted browser code may call this method; renderer requests are not
+  // exposed this interface.
+  [AllowedContext=sandbox.mojom.Context.kBrowser]
+  SetByodTunnelConfig(ByodTunnelConfig? config);
 };

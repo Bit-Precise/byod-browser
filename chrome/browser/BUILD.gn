@@ -1084,6 +1084,7 @@ source_set("core") {
     "//chrome/browser/ui/webui/engagement",
     "//chrome/browser/ui/webui/internal_debug_pages_disabled",
     "//chrome/browser/ui/webui/location_internals",
+    "//chrome/browser/ui/webui/grips",
     "//chrome/browser/ui/webui/media",
     "//chrome/browser/ui/webui/omnibox",
     "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",

@@ -8,8 +8,14 @@
 
 #include "net/base/proxy_chain.h"
 #include "net/http/proxy_fallback.h"
+#include "net/socket/stream_socket.h"
 
 namespace net {
+
+std::unique_ptr<StreamSocket> ProxyDelegate::CreateTunnelSocket(
+    const ProxyChain&, const HostPortPair&) {
+  return nullptr;
+}
 
 std::optional<bool> ProxyDelegate::CanFalloverToNextProxyOverride(
     const ProxyChain& proxy_chain,

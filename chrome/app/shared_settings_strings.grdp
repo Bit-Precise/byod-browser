@@ -261,6 +261,12 @@
   <message name="IDS_SETTINGS_PEOPLE_SIGN_IN_PROMPT" desc="The text displayed to prompt users to sign in to chrome.">
     Get Google smarts in Chrome
   </message>
+  <message name="IDS_SETTINGS_BYOD_CONNECT_SIGN_IN" desc="Label for the button that opens the BYOD Connect sign-in page from Chrome settings.">
+    Sign in with Connect
+  </message>
+  <message name="IDS_SETTINGS_BYOD_CONNECT_SIGN_IN_DESCRIPTION" desc="Description shown next to the BYOD Connect sign-in button in Chrome settings.">
+    Use your Connect account for BYOD exams
+  </message>
   <message name="IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF" desc="The label for the button that lets the user turn off profile syncing with their gaia account.">
     Turn off
   </message>

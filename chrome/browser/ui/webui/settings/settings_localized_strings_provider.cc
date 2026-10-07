@@ -2423,6 +2423,9 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
   static constexpr webui::LocalizedString kLocalizedStrings[] = {
       // Top level people strings:
       {"peoplePageTitle", IDS_SETTINGS_PEOPLE},
+      {"byodConnectSignIn", IDS_SETTINGS_BYOD_CONNECT_SIGN_IN},
+      {"byodConnectSignInDescription",
+       IDS_SETTINGS_BYOD_CONNECT_SIGN_IN_DESCRIPTION},
       {"syncSettingsSavedToast", IDS_SETTINGS_SYNC_SETTINGS_SAVED_TOAST_LABEL},
       {"manageGoogleAccount", IDS_SETTINGS_MANAGE_GOOGLE_ACCOUNT},
       {"syncAndNonPersonalizedServices",

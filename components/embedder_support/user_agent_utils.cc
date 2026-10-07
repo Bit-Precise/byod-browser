@@ -215,6 +215,12 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
 // depending on the Reduce User-Agent reduction phase features.
 std::string GetUserAgentInternal() {
   std::string product = GetProductAndVersion();
+  // Keep the normal Chromium UA (including UA Reduction) and add a stable
+  // product token identifying this BYOD build. Use the full version here so
+  // support logs can distinguish BYOD releases even when Chrome's own UA
+  // version is reduced to the major version.
+  product += " BYODBrowser/";
+  product += version_info::GetVersionNumber();
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
     product.insert(0, "Headless");
   }

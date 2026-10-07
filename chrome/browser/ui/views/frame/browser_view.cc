@@ -691,6 +691,10 @@ class BrowserView::ExclusiveAccessContextImpl
   }
 
   bool CanUserExitFullscreen() const override {
+    if (BrowserWindowFullscreenController::From(browser_view_->browser())
+            ->IsForceFullscreen()) {
+      return false;
+    }
 #if BUILDFLAG(IS_CHROMEOS)
     return !platform_util::IsBrowserLockedFullscreen(browser_view_->browser());
 #else
@@ -769,10 +773,12 @@ class BrowserView::ExclusiveAccessContextImpl
       ExclusiveAccessBubbleHideCallback first_hide_callback) override {
     // Whether we should remove the bubble if it exists, or not show the bubble.
     // TODO(jamescook): Figure out what to do with mouse-lock.
-    bool should_close_bubble = false;
+    bool should_close_bubble =
+        BrowserWindowFullscreenController::From(browser_view_->browser())
+            ->IsForceFullscreen();
 #if BUILDFLAG(IS_CHROMEOS)
     // Trusted pinned mode does not allow to escape. So do not show the bubble.
-    should_close_bubble =
+    should_close_bubble |=
         platform_util::IsBrowserLockedFullscreen(browser_view_->browser_.get());
 #endif
     if (!params.has_download) {

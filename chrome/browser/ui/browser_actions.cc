@@ -58,11 +58,13 @@
 #include "components/search_engines/ai_mode_button_config.h"
 #include "components/search_engines/ai_mode_button_service.h"
 #include "components/tab_groups/tab_group_id.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_zoom.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/base/page_transition_types.h"
 #if BUILDFLAG(IS_MAC)
 #include "chrome/browser/global_keyboard_shortcuts_mac.h"
 #include "chrome/browser/ui/browser_commands_mac.h"
@@ -241,6 +243,7 @@
 #include "ui/menus/simple_menu_model.h"
 #include "ui/views/view.h"
 #include "ui/views/view_class_properties.h"
+#include "url/gurl.h"
 
 #if !BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
@@ -324,6 +327,15 @@ actions::ActionItem::ActionItemBuilder SidePanelAction(
       .SetTooltipText(l10n_util::GetStringUTF16(tooltip_id))
       .SetImage(ui::ImageModel::FromVectorIcon(icon, ui::kColorIcon))
       .SetProperty(actions::kActionItemPinnableKey, pinnable_state);
+}
+
+void OpenGripsLogin(BrowserWindowInterface* browser) {
+  browser->OpenURL(
+      content::OpenURLParams(
+          GURL("grips://login/"), content::Referrer(),
+          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+          /*is_renderer_initiated=*/false),
+      base::NullCallback());
 }
 
 }  // namespace
@@ -4002,16 +4014,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
           base::BindRepeating(
               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
                  actions::ActionInvocationContext context) {
-                Profile* profile = bwi->GetProfile();
-                signin::IdentityManager* identity_manager =
-                    IdentityManagerFactory::GetForProfileIfExists(profile);
-                CoreAccountInfo account;
-                if (identity_manager) {
-                  account = identity_manager->GetPrimaryAccountInfo(
-                      signin::ConsentLevel::kSignin);
-                }
-                signin_ui_util::EnableSyncFromSingleAccountPromo(
-                    profile, account, signin_metrics::AccessPoint::kMenu);
+                OpenGripsLogin(bwi);
               },
               bwi))
           .SetActionId(kActionTurnOnSync)
@@ -4022,16 +4025,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
           base::BindRepeating(
               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
                  actions::ActionInvocationContext context) {
-                Profile* profile = bwi->GetProfile();
-                signin::IdentityManager* identity_manager =
-                    IdentityManagerFactory::GetForProfileIfExists(profile);
-                CoreAccountInfo account;
-                if (identity_manager) {
-                  account = identity_manager->GetPrimaryAccountInfo(
-                      signin::ConsentLevel::kSignin);
-                }
-                signin_ui_util::SignInFromSingleAccountPromo(
-                    profile, account, signin_metrics::AccessPoint::kMenu);
+                OpenGripsLogin(bwi);
               },
               bwi))
           .SetActionId(kActionShowSignin)
@@ -4042,9 +4036,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
           base::BindRepeating(
               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
                  actions::ActionInvocationContext context) {
-                Profile* profile = bwi->GetProfile();
-                signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(
-                    profile, signin_metrics::AccessPoint::kMenu);
+                OpenGripsLogin(bwi);
               },
               bwi))
           .SetActionId(kActionShowSigninWhenPaused)

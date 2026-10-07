@@ -162,6 +162,11 @@ inline constexpr char kChromeSearchRemoteNtpHost[] = "remote-ntp";
 //     there are additional Instant-PID checks that make sure the request is
 //     coming from a blessed Instant process, and deny the request.
 inline constexpr char kChromeSearchScheme[] = "chrome-search";
+inline constexpr char kGripsScheme[] = "grips";
+inline constexpr char kGripsExamHost[] = "exam";
+inline constexpr char kGripsTrustedExamHost[] = "exam.cs.ac.cn";
+inline constexpr char kGripsLoginHost[] = "login";
+inline constexpr char kGripsExamUrl[] = "grips://exam/";
 
 // This is the base URL of content that can be embedded in chrome://new-tab-page
 // using an <iframe>. The embedded untrusted content can make web requests and

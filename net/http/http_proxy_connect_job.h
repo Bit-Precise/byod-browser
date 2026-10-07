@@ -241,6 +241,7 @@ class NET_EXPORT_PRIVATE HttpProxyConnectJob : public ConnectJob,
  private:
   enum State {
     STATE_BEGIN_CONNECT,
+    STATE_CUSTOM_TUNNEL_COMPLETE,
     STATE_TRANSPORT_CONNECT,
     STATE_TRANSPORT_CONNECT_COMPLETE,
     STATE_HTTP_PROXY_CONNECT,
@@ -320,6 +321,7 @@ class NET_EXPORT_PRIVATE HttpProxyConnectJob : public ConnectJob,
 
   std::unique_ptr<ConnectJob> nested_connect_job_;
   std::unique_ptr<ProxyClientSocket> transport_socket_;
+  std::unique_ptr<StreamSocket> custom_tunnel_socket_;
 
   std::unique_ptr<SpdyStreamRequest> spdy_stream_request_;
 

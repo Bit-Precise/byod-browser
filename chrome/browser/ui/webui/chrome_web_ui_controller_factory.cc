@@ -73,6 +73,7 @@
 #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
 #include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
 #include "chrome/browser/ui/webui/downloads/downloads_ui.h"
+#include "chrome/browser/ui/webui/grips/grips_ui.h"
 #include "chrome/browser/ui/webui/history/history_ui.h"
 #include "chrome/browser/ui/webui/iwa_dev/iwa_dev_ui.h"
 #include "chrome/browser/ui/webui/management/management_ui.h"
@@ -159,6 +160,17 @@ WebUIController* NewWebUI(WebUI* web_ui, const GURL& url) {
 // associated with it.
 WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
                                              const GURL& url) {
+  if (url.SchemeIs(chrome::kGripsScheme)) {
+    if (url.host() == chrome::kGripsExamHost ||
+        url.host() == chrome::kGripsTrustedExamHost) {
+      return &NewWebUI<GripsExamUI>;
+    }
+    if (url.host() == chrome::kGripsLoginHost) {
+      return &NewWebUI<GripsLoginUI>;
+    }
+    return nullptr;
+  }
+
   // This will get called a lot to check all URLs, so do a quick check of other
   // schemes to filter out most URLs.
 #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
@@ -345,6 +357,13 @@ bool ChromeWebUIControllerFactory::IsWebUIAllowedToMakeNetworkRequests(
   // If you are adding a new host to this list, please file a corresponding bug
   // to track its removal. See https://crbug.com/40091019 for the metabug.
   return
+      // BYOD exam bootstrap fetches its signed configuration and OIDC session
+      // state from the exam control plane. Keep the privileged WebUI origin
+      // isolated, but allow only the two exact grips exam hosts to use the
+      // normal network loader for HTTPS requests.
+      (origin.scheme() == chrome::kGripsScheme &&
+       (origin.host() == chrome::kGripsExamHost ||
+        origin.host() == chrome::kGripsTrustedExamHost)) ||
       // https://crbug.com/40571286
       origin.host() == chrome::kChromeUISyncConfirmationHost ||
       // https://crbug.com/41382586

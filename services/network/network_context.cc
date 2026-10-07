@@ -991,6 +991,9 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
 
 NetworkContext::~NetworkContext() {
   is_destructing_ = true;
+  // Cancel browser-owned WSS requests before their URLRequestContext dies.
+  if (proxy_delegate_)
+    proxy_delegate_->ClearByodTunnelConfig();
 
   // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
   // any in-flight background operations and avoid callback races.
@@ -2923,10 +2926,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
 
   if (params_->initial_custom_proxy_config ||
       params_->custom_proxy_config_client_receiver) {
-    builder.set_proxy_delegate(std::make_unique<NetworkServiceProxyDelegate>(
+    auto proxy_delegate = std::make_unique<NetworkServiceProxyDelegate>(
         std::move(params_->initial_custom_proxy_config),
         std::move(params_->custom_proxy_config_client_receiver),
-        std::move(params_->custom_proxy_connection_observer_remote)));
+        std::move(params_->custom_proxy_connection_observer_remote));
+    proxy_delegate_ = proxy_delegate.get();
+    builder.set_proxy_delegate(std::move(proxy_delegate));
   }
 
   net::NetLog* net_log = nullptr;
@@ -4078,6 +4083,20 @@ void NetworkContext::SetVariationsHeaders(
   variations_headers_ = std::move(variations_headers);
 }
 
+void NetworkContext::SetByodTunnelConfig(
+    mojom::ByodTunnelConfigPtr config) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!proxy_delegate_) {
+    return;
+  }
+  if (!config) {
+    proxy_delegate_->ClearByodTunnelConfig();
+    return;
+  }
+  proxy_delegate_->SetByodTunnelConfig(
+      config->source_host, config->proxy_host, config->proxy_port,
+      config->ticket, url_request_context_);
+}
 
 bool NetworkContext::HasCookieAccessForDeviceBoundSession(
     const net::device_bound_sessions::CookieAccessCheckParams& params) {

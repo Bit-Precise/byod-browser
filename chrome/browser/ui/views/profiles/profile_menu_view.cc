@@ -101,6 +101,9 @@
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/widget/widget.h"
+#include "content/public/browser/page_navigator.h"
+#include "ui/base/page_transition_types.h"
+#include "url/gurl.h"
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 #include "chrome/browser/internal/profiles/profile_view_avatar_decoration_specs_branded.h"
@@ -399,15 +402,17 @@ void ProfileMenuView::OnSigninButtonClicked(
   }
   GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
 
-  // Pending while the HistorySyncPillExperiment is in progress.
-  if (button_type == ActionableItem::kSigninReauthButton) {
-    // The reauth button does not trigger a sync opt in.
-    signin_ui_util::ShowReauthForAccount(&profile(), account.email,
-                                         access_point);
-    return;
-  }
-  signin_ui_util::EnableSyncFromSingleAccountPromo(&profile(), account,
-                                                   access_point);
+  // BYOD Browser uses Connect as its account provider. Keep Chromium's
+  // GAIA/DICE identity stack untouched (it is still needed by unrelated
+  // Chromium components), but replace the profile-menu sign-in action with a
+  // top-level navigation to the Connect login page. This stores the normal
+  // host-only Connect cookie in the current profile; the exam OIDC flow then
+  // reuses that SSO session in the same profile without copying cookies.
+  browser().OpenURL(content::OpenURLParams(
+      GURL("grips://login/"), content::Referrer(),
+      WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      /*is_renderer_initiated=*/false),
+      base::NullCallback());
 }
 
 void ProfileMenuView::OnSignoutButtonClicked() {

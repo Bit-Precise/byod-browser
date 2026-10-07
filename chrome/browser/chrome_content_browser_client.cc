@@ -208,6 +208,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webid/identity_dialog_controller.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
+#include "chrome/browser/ui/webui/grips/grips_url_handler.h"
 #include "chrome/browser/ui/webui/internal_debug_pages_disabled/internal_debug_pages_disabled_ui.h"
 #include "chrome/browser/ui/webui/log_web_ui_url.h"
 #include "chrome/browser/universal_web_contents_observers.h"
@@ -2220,6 +2221,7 @@ void ChromeContentBrowserClient::GetAdditionalWebUISchemes(
   additional_schemes->emplace_back(chrome::kChromeSearchScheme);
   additional_schemes->emplace_back(dom_distiller::kDomDistillerScheme);
   additional_schemes->emplace_back(content::kChromeDevToolsScheme);
+  additional_schemes->emplace_back(chrome::kGripsScheme);
 }
 
 bool ChromeContentBrowserClient::IsInternalScheme(const GURL& url) {
@@ -5032,6 +5034,9 @@ bool ChromeContentBrowserClient::
 
 void ChromeContentBrowserClient::BrowserURLHandlerCreated(
     BrowserURLHandler* handler) {
+  handler->AddHandlerPair(&grips::HandleGripsExamURL,
+                          BrowserURLHandler::null_handler());
+
   // The group policy NTP URL handler must be registered before the other NTP
   // URL handlers below. Also register it before the "parts" handlers, so the
   // NTP policy takes precedence over extensions that override the NTP.

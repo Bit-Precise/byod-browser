@@ -48,7 +48,12 @@ bool ShouldRespondToRequest(blink::WebLocalFrame** frame_ptr,
   bool webui_enabled =
       (render_frame->GetEnabledBindings().Has(BindingsPolicyValue::kWebUi)) &&
       (frame_url.SchemeIs(kChromeUIScheme) ||
-       frame_url.SchemeIs(url::kDataScheme));
+       frame_url.SchemeIs(url::kDataScheme) ||
+       // The Grips browser-owned WebUI uses a custom scheme. The browser
+       // process grants the WebUI binding only to the trusted grips origins;
+       // include that scheme here so chrome.send/getVariableValue work on the
+       // in-tab exam bootstrap page.
+       frame_url.SchemeIs("grips"));
 
   if (!webui_enabled)
     return false;

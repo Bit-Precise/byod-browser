@@ -84,7 +84,8 @@ bool ValidateLaunchUrlWebUnsafe(const GURL& url) {
 
   auto* policy = content::ChildProcessSecurityPolicy::GetInstance();
   return policy->IsWebSafeScheme(url.GetScheme()) ||
-         url.SchemeIs(url::kFileScheme) || url_scheme_is_chrome ||
+         url.SchemeIs(url::kFileScheme) ||
+         url.SchemeIs(chrome::kGripsScheme) || url_scheme_is_chrome ||
          url_scheme_is_content || url_points_to_an_approved_settings_page ||
          url.spec() == url::kAboutBlankURL;
 }

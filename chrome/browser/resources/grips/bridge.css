@@ -1,0 +1,45 @@
+html,
+body,
+iframe {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #f3f6fb;
+}
+
+#bridge-loading {
+  align-items: center;
+  color: #52627a;
+  display: flex;
+  flex-direction: column;
+  font: 15px system-ui, sans-serif;
+  gap: 12px;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 1;
+}
+
+.bridge-spinner {
+  animation: bridge-spin 800ms linear infinite;
+  border: 3px solid #d7e0ef;
+  border-radius: 50%;
+  border-top-color: #4c73ff;
+  height: 28px;
+  width: 28px;
+}
+
+@keyframes bridge-spin {
+  to { transform: rotate(360deg); }
+}
+
+#exam-app {
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}

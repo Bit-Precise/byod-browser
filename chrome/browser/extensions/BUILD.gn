@@ -2648,6 +2648,7 @@ source_set("browser_tests") {
       "//chrome/browser/ui/search:test_support_ui",
       "//chrome/browser/ui/tabs/saved_tab_groups",
       "//chrome/browser/ui/views/location_bar",
+      "//chrome/browser/ui/webui/grips:browser_tests",
       "//chrome/browser/ui/webui/history_clusters:browser_tests",
       "//chrome/browser/ui/webui/interstitials:browser_tests",
       "//chrome/browser/ui/webui/location_internals:browser_tests",

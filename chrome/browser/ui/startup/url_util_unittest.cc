@@ -20,6 +20,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebUnsafe) {
   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("https://google.com")));
   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("file:///tmp/test")));
   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("about:blank")));
+  EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(
+      GURL("grips://exam.cs.ac.cn/example-exam")));
 
   // chrome:// settings
 #if BUILDFLAG(IS_CHROMEOS)
@@ -67,6 +69,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebSafe) {
   // Privileged or local schemes should be rejected in WebSafe context.
   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("file:///tmp/test")));
   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("chrome://settings")));
+  EXPECT_FALSE(ValidateLaunchUrlWebSafe(
+      GURL("grips://exam.cs.ac.cn/example-exam")));
   EXPECT_FALSE(
       ValidateLaunchUrlWebSafe(GURL("chrome://settings/resetProfileSettings")));
   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("javascript:alert(1)")));

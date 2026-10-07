@@ -1479,6 +1479,15 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
 
   proxy_config_monitor_->AddToNetworkContextParams(network_context_params);
 
+  // Keep the network service's custom-proxy delegate available for the
+  // browser-owned BYOD exam tunnel. Its rules are empty by default, so this
+  // has no effect on ordinary browsing; grips://exam updates the delegate
+  // through NetworkContext::SetByodTunnelConfig when a session becomes active.
+  if (!network_context_params->initial_custom_proxy_config) {
+    network_context_params->initial_custom_proxy_config =
+        network::mojom::CustomProxyConfig::New();
+  }
+
   network_context_params->enable_certificate_reporting = true;
 
   SCTReportingService* sct_reporting_service =

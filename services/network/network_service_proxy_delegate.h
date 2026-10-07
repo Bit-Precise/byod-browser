@@ -5,6 +5,10 @@
 #ifndef SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
 #define SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
 
+#include <cstdint>
+#include <string>
+#include <vector>
+
 #include "base/component_export.h"
 #include "base/memory/raw_ptr.h"
 #include "base/types/expected.h"
@@ -13,15 +17,19 @@
 #include "net/base/completion_once_callback.h"
 #include "net/base/net_errors.h"
 #include "net/base/proxy_delegate.h"
+#include "net/base/proxy_server.h"
+#include "net/http/http_request_headers.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 
 namespace net {
 class HttpRequestHeaders;
 class ProxyResolutionService;
+class URLRequestContext;
 }  // namespace net
 
 namespace network {
+class ByodXHTTPTransport;
 
 // NetworkServiceProxyDelegate is used to support the custom proxy
 // configuration, which can be set in
@@ -65,6 +73,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
   void SetProxyResolutionService(
       net::ProxyResolutionService* proxy_resolution_service) override;
 
+  // Configures the explicit host allowlist and proxy endpoint used by the
+  // BYOD exam transport.
+  void SetByodTunnelConfig(const std::string& tunnel_hosts_serialized,
+                           const std::string& proxy_host,
+                           uint16_t proxy_port,
+                           const std::string& uuid,
+                           net::URLRequestContext* context);
+  void ClearByodTunnelConfig();
+  std::unique_ptr<net::StreamSocket> CreateTunnelSocket(
+      const net::ProxyChain&, const net::HostPortPair&) override;
+
  private:
   friend class NetworkServiceProxyDelegateTest;
 
@@ -88,6 +107,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
   mojo::Remote<mojom::CustomProxyConnectionObserver> observer_;
 
   raw_ptr<net::ProxyResolutionService> proxy_resolution_service_ = nullptr;
+
+  bool byod_tunnel_enabled_ = false;
+  std::vector<std::string> byod_tunnel_hosts_;
+  net::ProxyServer byod_proxy_server_;
+  scoped_refptr<ByodXHTTPTransport> byod_xhttp_;
 };
 
 }  // namespace network

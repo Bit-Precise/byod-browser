@@ -15,6 +15,7 @@
 #include "base/debug/profiler.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
@@ -129,6 +130,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -143,8 +145,10 @@
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/actions/actions.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "url/gurl.h"
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/devtools/devtools_policy_dialog.h"
@@ -204,6 +208,15 @@ DEFINE_USER_DATA(chrome::BrowserCommandController);
 namespace chrome {
 
 namespace {
+
+void OpenGripsLogin(Browser* browser) {
+  browser->OpenURL(
+      content::OpenURLParams(
+          GURL("grips://login/"), content::Referrer(),
+          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+          /*is_renderer_initiated=*/false),
+      base::NullCallback());
+}
 
 // Ensures that - if we have not popped up an infobar to prompt the user to e.g.
 // reload the current page - that the content pane of the browser is refocused.
@@ -987,22 +1000,13 @@ void BrowserCommandController::HandleCommandWithDisposition(
       break;
 #endif  // !BUILDFLAG(IS_CHROMEOS)
     case IDC_TURN_ON_SYNC:
-      signin_ui_util::EnableSyncFromSingleAccountPromo(
-          browser_->GetProfile(),
-          GetAccountInfoFromProfile(browser_->GetProfile())
-              .GetCoreAccountInfo(),
-          signin_metrics::AccessPoint::kMenu);
+      OpenGripsLogin(browser_);
       break;
     case IDC_SHOW_SIGNIN:
-      signin_ui_util::SignInFromSingleAccountPromo(
-          browser_->GetProfile(),
-          GetAccountInfoFromProfile(browser_->GetProfile())
-              .GetCoreAccountInfo(),
-          signin_metrics::AccessPoint::kMenu);
+      OpenGripsLogin(browser_);
       break;
     case IDC_SHOW_SIGNIN_WHEN_PAUSED:
-      signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(
-          browser_->GetProfile(), signin_metrics::AccessPoint::kMenu);
+      OpenGripsLogin(browser_);
       break;
     case IDC_SHOW_PASSWORD_MANAGER:
       ShowPasswordManager(browser_);

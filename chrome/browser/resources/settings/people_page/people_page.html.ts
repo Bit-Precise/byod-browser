@@ -14,6 +14,17 @@ export function getHtml(this: SettingsPeoplePageElement) {
       <div>
 
 <if expr="not is_chromeos">
+        <!-- BYOD Connect is independent of Chromium's Google identity. -->
+        <div id="byod-connect-login" class="cr-row first two-line">
+          <div class="flex cr-padded-text">
+            <div>$i18n{byodConnectSignIn}</div>
+            <div class="secondary">$i18n{byodConnectSignInDescription}</div>
+          </div>
+          <cr-button class="action-button" @click="${this.onConnectLoginClick_}">
+            $i18n{byodConnectSignIn}
+          </cr-button>
+        </div>
+
         ${this.shouldShowSyncAccountControl_() ? html`
           <settings-sync-account-control
               .syncStatus="${this.syncStatus!}"

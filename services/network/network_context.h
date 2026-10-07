@@ -136,6 +136,7 @@ class MdnsResponderManager;
 class MojoBackendFileOperationsFactory;
 class NetworkService;
 class NetworkServiceNetworkDelegate;
+class NetworkServiceProxyDelegate;
 class P2PSocketManager;
 
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
@@ -631,6 +632,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void SetVariationsHeaders(
       variations::mojom::VariationsHeadersPtr variations_headers) override;
 
+  void SetByodTunnelConfig(mojom::ByodTunnelConfigPtr config) override;
+
   void GetDeviceBoundSessionManager(
       mojo::PendingReceiver<network::mojom::DeviceBoundSessionManager>
           device_bound_session_manager) override;
@@ -984,6 +987,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   // Owned by URLRequestContext.
   raw_ptr<NetworkServiceNetworkDelegate> network_delegate_ = nullptr;
+
+  // Owned by URLRequestContext's proxy delegate. This non-owning pointer is
+  // valid for the lifetime of the context and lets the browser-scoped Mojo
+  // method update the per-profile BYOD routing state.
+  raw_ptr<NetworkServiceProxyDelegate> proxy_delegate_ = nullptr;
 
   mojom::NetworkContextParamsPtr params_;
 

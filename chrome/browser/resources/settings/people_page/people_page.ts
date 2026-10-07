@@ -331,6 +331,14 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
     Router.getInstance().navigateTo(routes.ACCOUNT);
   }
 
+  /** Opens the BYOD Connect login page in this settings tab. */
+  protected onConnectLoginClick_() {
+    // Ask the browser process to navigate. A renderer-initiated transition
+    // from chrome://settings to the custom grips:// scheme is blocked by the
+    // child-process security policy and becomes about:blank#blocked.
+    this.syncBrowserProxy_.startSignIn(ChromeSigninAccessPoint.SETTINGS);
+  }
+
   protected onGoogleServicesClick_() {
     Router.getInstance().navigateTo(routes.GOOGLE_SERVICES);
   }

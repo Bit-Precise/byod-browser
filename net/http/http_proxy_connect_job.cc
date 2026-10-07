@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "net/http/http_proxy_connect_job.h"
+#include "net/base/proxy_delegate.h"
 
 #include <algorithm>
 #include <memory>
@@ -281,6 +282,7 @@ LoadState HttpProxyConnectJob::GetLoadState() const {
   switch (next_state_) {
     case STATE_TRANSPORT_CONNECT_COMPLETE:
       return nested_connect_job_->GetLoadState();
+    case STATE_CUSTOM_TUNNEL_COMPLETE:
     case STATE_HTTP_PROXY_CONNECT:
     case STATE_HTTP_PROXY_CONNECT_COMPLETE:
     case STATE_SPDY_PROXY_CREATE_STREAM:
@@ -430,6 +432,12 @@ int HttpProxyConnectJob::DoLoop(int result) {
         DCHECK_EQ(OK, rv);
         rv = DoBeginConnect();
         break;
+      case STATE_CUSTOM_TUNNEL_COMPLETE:
+        if (rv == OK) {
+          has_established_connection_ = true;
+          SetSocket(std::move(custom_tunnel_socket_), std::nullopt);
+        }
+        break;
       case STATE_TRANSPORT_CONNECT:
         DCHECK_EQ(OK, rv);
         rv = DoTransportConnect();
@@ -478,6 +486,17 @@ int HttpProxyConnectJob::DoLoop(int result) {
 
 int HttpProxyConnectJob::DoBeginConnect() {
   connect_start_time_ = base::TimeTicks::Now();
+  if (params_->tunnel() && common_connect_job_params()->proxy_delegate) {
+    custom_tunnel_socket_ =
+        common_connect_job_params()->proxy_delegate->CreateTunnelSocket(
+            params_->proxy_chain(), params_->endpoint());
+    if (custom_tunnel_socket_) {
+      ResetTimer(kHttpProxyConnectJobTunnelTimeout);
+      next_state_ = STATE_CUSTOM_TUNNEL_COMPLETE;
+      return custom_tunnel_socket_->Connect(base::BindOnce(
+          &HttpProxyConnectJob::OnIOComplete, weak_ptr_factory_.GetWeakPtr()));
+    }
+  }
   ResetTimer(
       AlternateNestedConnectionTimeout(*params_, network_quality_estimator()));
   switch (GetProxyServerScheme()) {

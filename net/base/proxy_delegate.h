@@ -5,6 +5,7 @@
 #ifndef NET_BASE_PROXY_DELEGATE_H_
 #define NET_BASE_PROXY_DELEGATE_H_
 
+#include <memory>
 #include <string>
 
 #include "base/types/expected.h"
@@ -24,6 +25,8 @@ class HttpRequestHeaders;
 class HttpResponseHeaders;
 class ProxyInfo;
 class ProxyResolutionService;
+class HostPortPair;
+class StreamSocket;
 
 // Delegate for setting up a connection.
 class NET_EXPORT ProxyDelegate {
@@ -32,6 +35,11 @@ class NET_EXPORT ProxyDelegate {
   ProxyDelegate(const ProxyDelegate&) = delete;
   ProxyDelegate& operator=(const ProxyDelegate&) = delete;
   virtual ~ProxyDelegate() = default;
+
+  // Optional native byte-stream transport. Null selects the standard proxy
+  // implementation; a returned socket replaces CONNECT, not source TLS.
+  virtual std::unique_ptr<StreamSocket> CreateTunnelSocket(
+      const ProxyChain& proxy_chain, const HostPortPair& destination);
 
   // Called as the proxy is being resolved for |url| for a |method| request.
   // The caller may pass an empty string to get method agnostic resoulution.

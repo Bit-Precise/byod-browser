@@ -18,8 +18,11 @@ GitHub 复用上游仓库对象，只需推送 BYOD 的新增提交。完整检�
 并使 depot_tools 位于 PATH 中。在新的工作目录执行：
 
 ```cmd
-git clone --single-branch --branch byod/155 https://github.com/Bit-Precise/byod-browser.git src
+git clone --depth=1 --single-branch --branch byod/155 https://github.com/Bit-Precise/byod-browser.git src
 ```
+
+`--depth=1` 只下载当前版本，避免在本地复制全部历史。需要历史比较或 rebase 时，
+再按需 deepen/unshallow；GitHub 上的源码分支始终保留完整上游祖先关系。
 
 在 `src` 同级创建 `.gclient`：
 

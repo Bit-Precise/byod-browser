@@ -1,0 +1,105 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+--- a/chrome/browser/ui/webui/grips/grips_page_handlers.cc
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -12,9 +12,13 @@
+ #include "base/strings/string_util.h"
+ #include "base/values.h"
++#include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
+ #include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
++#include "url/origin.h"
+ 
+ namespace grips {
+ namespace {
+@@ -45,6 +49,71 @@ bool IsSafeIdentifier(std::string_view value) {
+   return true;
+ }
+ 
++constexpr char kOidcCompleteQuery[] = "grips_oidc_complete=1";
++constexpr char kWorkspacesUrl[] = "grips://workspaces/";
++
++// Tracks an OIDC flow after it leaves the Grips WebUI. This object is attached
++// to the WebContents rather than the LoginPageHandler because navigating to
++// the identity provider destroys the WebUI and its page handler.
++class GripsOidcNavigationObserver final
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<GripsOidcNavigationObserver> {
++ public:
++  GripsOidcNavigationObserver(const GripsOidcNavigationObserver&) = delete;
++  GripsOidcNavigationObserver& operator=(
++      const GripsOidcNavigationObserver&) = delete;
++  ~GripsOidcNavigationObserver() override = default;
++
++  static void Arm(content::WebContents* web_contents,
++                  url::Origin server_origin) {
++    GripsOidcNavigationObserver* observer = FromWebContents(web_contents);
++    if (!observer) {
++      CreateForWebContents(web_contents, std::move(server_origin));
++      return;
++    }
++    observer->server_origin_ = std::move(server_origin);
++    observer->armed_ = true;
++  }
++
++  void DidFinishNavigation(
++      content::NavigationHandle* navigation_handle) override {
++    if (!armed_ || !navigation_handle->IsInPrimaryMainFrame() ||
++        !navigation_handle->HasCommitted()) {
++      return;
++    }
++
++    const GURL& url = navigation_handle->GetURL();
++    if (url::Origin::Create(url) != server_origin_ || url.path_piece() != "/" ||
++        url.query_piece() != kOidcCompleteQuery) {
++      return;
++    }
++
++    armed_ = false;
++    content::OpenURLParams params(GURL(kWorkspacesUrl), content::Referrer(),
++                                  WindowOpenDisposition::CURRENT_TAB,
++                                  ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++                                  /*is_renderer_initiated=*/false);
++    GetWebContents().OpenURL(params, {});
++  }
++
++ private:
++  friend class content::WebContentsUserData<GripsOidcNavigationObserver>;
++
++  GripsOidcNavigationObserver(content::WebContents* web_contents,
++                              url::Origin server_origin)
++      : content::WebContentsObserver(web_contents),
++        content::WebContentsUserData<GripsOidcNavigationObserver>(
++            *web_contents),
++        server_origin_(std::move(server_origin)) {}
++
++  url::Origin server_origin_;
++  bool armed_ = true;
++
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(GripsOidcNavigationObserver);
++
+ }  // namespace
+ 
+ LoginPageHandler::LoginPageHandler(
+@@ -176,9 +245,13 @@ void LoginPageHandler::OpenOidcLogin(
+     return;
+   }
+   GURL url = client_.server_origin().Resolve(base::StrCat(
+-      {"/api/auth/oidc/", base::EscapePath(provider), "/login"}));
++      {"/api/auth/oidc/", base::EscapePath(provider),
++       "/login?next=",
++       base::EscapeQueryParamValue("/?grips_oidc_complete=1", true)}));
++  GripsOidcNavigationObserver::Arm(
++      web_contents_, url::Origin::Create(client_.server_origin()));
+   content::OpenURLParams params(url, content::Referrer(),
+-                                WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                                WindowOpenDisposition::CURRENT_TAB,
+                                 ui::PAGE_TRANSITION_LINK,
+                                 /*is_renderer_initiated=*/false);
+   web_contents_->OpenURL(params, {});

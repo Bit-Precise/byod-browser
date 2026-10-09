@@ -1,0 +1,12 @@
+diff --git a/chrome/browser/resources/grips/workspaces.ts b/chrome/browser/resources/grips/workspaces.ts
+--- a/chrome/browser/resources/grips/workspaces.ts
++++ b/chrome/browser/resources/grips/workspaces.ts
+@@ -151,7 +151,7 @@ function connectorCard(connector: Connector) {
+     ['Codex', connector.codexVersion],
+     ['IP', connector.clientIp],
+     ['Last seen', connector.lastSeenAt],
+-  ]) {
++  ] as Array<[string, string]>) {
+     if (!value) {
+       continue;
+     }

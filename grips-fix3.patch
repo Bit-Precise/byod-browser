@@ -1,0 +1,81 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_agentserver_client.h b/chrome/browser/ui/webui/grips/grips_agentserver_client.h
+--- a/chrome/browser/ui/webui/grips/grips_agentserver_client.h
++++ b/chrome/browser/ui/webui/grips/grips_agentserver_client.h
+@@ -49,7 +49,7 @@ class AgentServerClient {
+ 
+   void Get(std::string_view path, ResponseCallback callback);
+   void Post(std::string_view path,
+-            base::Value::Dict body,
++            base::DictValue body,
+             ResponseCallback callback);
+   void PostEmpty(std::string_view path, ResponseCallback callback);
+ 
+diff --git a/chrome/browser/ui/webui/grips/grips_agentserver_client.cc b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+--- a/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
++++ b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+@@ -94,7 +94,7 @@ void AgentServerClient::Get(std::string_view path,
+ }
+ 
+ void AgentServerClient::Post(std::string_view path,
+-                             base::Value::Dict body,
++                             base::DictValue body,
+                              ResponseCallback callback) {
+   std::string json;
+   base::JSONWriter::Write(body, &json);
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+--- a/chrome/browser/ui/webui/grips/grips_page_handlers.cc
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -11,7 +11,7 @@
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_util.h"
+ #include "base/values.h"
+-#include "content/public/browser/open_url_params.h"
++#include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/web_contents.h"
+ #include "net/base/escape.h"
+ #include "ui/base/page_transition_types.h"
+@@ -37,7 +37,7 @@ mojom::ApiErrorPtr MakeError(const AgentServerClient::Response& response,
+   return error;
+ }
+ 
+-std::string StringField(const base::Value::Dict& value,
++std::string StringField(const base::DictValue& value,
+                         std::string_view key) {
+   const std::string* result = value.FindString(key);
+   return result ? *result : std::string();
+@@ -79,7 +79,7 @@ void LoginPageHandler::OnLoginConfig(
+     return;
+   }
+ 
+-  const base::Value::Dict& body = response.body->GetDict();
++  const base::DictValue& body = response.body->GetDict();
+   config->password_auth = body.FindBool("password_auth").value_or(false);
+   if (const base::Value::List* providers = body.FindList("providers")) {
+     for (const base::Value& provider : *providers) {
+@@ -139,7 +139,7 @@ void LoginPageHandler::Login(const std::string& email,
+     std::move(callback).Run(std::move(error));
+     return;
+   }
+-  base::Value::Dict body;
++  base::DictValue body;
+   body.Set("email", email);
+   body.Set("password", password);
+   client_.Post("/api/auth/login", std::move(body),
+@@ -213,7 +213,7 @@ void WorkspacesPageHandler::OnListWorkspaces(
+     if (!item.is_dict()) {
+       continue;
+     }
+-    const base::Value::Dict& value = item.GetDict();
++    const base::DictValue& value = item.GetDict();
+     std::string id = StringField(value, "id");
+     if (id.empty()) {
+       continue;
+@@ -264,7 +264,7 @@ void WorkspacesPageHandler::OnListConnectors(
+     if (!item.is_dict()) {
+       continue;
+     }
+-    const base::Value::Dict& value = item.GetDict();
++    const base::DictValue& value = item.GetDict();
+     std::string exe_id = StringField(value, "exe_id");
+     if (exe_id.empty()) {
+       continue;

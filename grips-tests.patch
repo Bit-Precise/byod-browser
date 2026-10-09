@@ -1,0 +1,104 @@
+diff --git a/chrome/browser/extensions/BUILD.gn b/chrome/browser/extensions/BUILD.gn
+index 2dfd86a29dc89..3e1d4a46b1b9e 100644
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -2611,6 +2611,7 @@ source_set("browser_tests") {
+       "//chrome/browser/ui/search:test_support_ui",
+       "//chrome/browser/ui/tabs/saved_tab_groups",
+       "//chrome/browser/ui/views/location_bar",
++      "//chrome/browser/ui/webui/grips:browser_tests",
+       "//chrome/browser/ui/webui/history_clusters:browser_tests",
+       "//chrome/browser/ui/webui/interstitials:browser_tests",
+       "//chrome/browser/ui/webui/location_internals:browser_tests",
+diff --git a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+new file mode 100644
+index 0000000000000..2b2b2b2b2b2b2
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+@@ -0,0 +1,86 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/test/browser_test.h"
++#include "url/gurl.h"
++
++namespace {
++
++class GripsUIBrowserTest : public InProcessBrowserTest {
++ protected:
++  content::WebContents* web_contents() {
++    return browser()->tab_strip_model()->GetActiveWebContents();
++  }
++};
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, HostsUseIsolatedControllers) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://login/")));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsLoginUI>());
++  EXPECT_EQ(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsWorkspacesUI>());
++  EXPECT_EQ(u"Sign in to Grips", web_contents()->GetTitle());
++
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://workspaces/")));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_EQ(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsLoginUI>());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsWorkspacesUI>());
++  EXPECT_EQ(u"Grips Workspaces", web_contents()->GetTitle());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, UnknownHostHasNoWebUI) {
++  // Navigation can report failure because no URLDataSource handles this host.
++  // The important security boundary is that the factory creates no WebUI.
++  ui_test_utils::NavigateToURL(browser(), GURL("grips://unknown/"));
++  EXPECT_FALSE(web_contents()->GetWebUI());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, WorkspaceDeepLinkUsesEntryPoint) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(),
++      GURL("grips://workspaces/workspace-123/connectors")));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsWorkspacesUI>());
++  EXPECT_EQ(u"Grips Workspaces", web_contents()->GetTitle());
++  EXPECT_EQ("/workspace-123/connectors",
++            web_contents()->GetLastCommittedURL().path());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, ExecutorsAliasUsesEntryPoint) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://workspaces/workspace-123/executors")));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsWorkspacesUI>());
++  EXPECT_EQ(u"Grips Workspaces", web_contents()->GetTitle());
++}
++
++}  // namespace

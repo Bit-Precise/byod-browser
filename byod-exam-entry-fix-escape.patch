@@ -1,0 +1,21 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.cc b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+--- a/chrome/browser/ui/webui/grips/grips_url_handler.cc
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+@@ -5,7 +5,7 @@
+ #include "chrome/browser/ui/webui/grips/grips_url_handler.h"
+ 
++#include "base/strings/escape.h"
+ #include "base/strings/strcat.h"
+ #include "chrome/common/url_constants.h"
+-#include "net/base/escape.h"
+ #include "url/gurl.h"
+ #include "url/url_constants.h"
+@@ -58,7 +58,7 @@ bool HandleGripsExamURL(GURL* url,
+ 
+   *url = GURL(base::StrCat(
+       {chrome::kGripsExamUrl, "?target=",
+-       net::EscapeQueryParamValue(target.spec(), true)}));
++       base::EscapeQueryParamValue(target.spec(), true)}));
+   return true;
+ }
+ 

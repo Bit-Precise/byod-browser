@@ -1,0 +1,32 @@
+diff --git a/chrome/common/url_constants.h b/chrome/common/url_constants.h
+--- a/chrome/common/url_constants.h
++++ b/chrome/common/url_constants.h
+@@ -158,0 +159,4 @@
++inline constexpr char kGripsScheme[] = "grips";
++inline constexpr char kGripsLoginHost[] = "login";
++inline constexpr char kGripsWorkspacesHost[] = "workspaces";
++inline constexpr char kGripsDefaultServerUrl[] = "https://agent.cs.ac.cn/";
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
+--- a/chrome/browser/chrome_browser_interface_binders_webui.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
+@@ -26,0 +27,1 @@
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
+@@ -240,0 +242,6 @@
++
++  RegisterWebUIControllerInterfaceBinder<
++      grips::mojom::LoginPageHandlerFactory, GripsLoginUI>(map);
++  RegisterWebUIControllerInterfaceBinder<
++      grips::mojom::WorkspacesPageHandlerFactory, GripsWorkspacesUI>(map);
++
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1075,0 +1076,1 @@
++    "//chrome/browser/ui/webui/grips",
+@@ -4801,0 +4803,1 @@
++    "//chrome/browser/ui/webui/grips:mojo_bindings",
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -83,0 +84,1 @@
++    "//chrome/browser/ui/webui/grips",

@@ -1,0 +1,16 @@
+is_debug = false
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+use_siso = true
+
+# BYOD: remove Google online service integration without changing build mode.
+safe_browsing_mode = 0
+enable_hangout_services_extension = false
+enable_remoting = false
+disable_fieldtrial_testing_config = true
+use_official_google_api_keys = false
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""

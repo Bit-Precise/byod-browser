@@ -1,0 +1,105 @@
+--- a/chrome/browser/ui/webui/grips/grips_ui.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@
+ #include <cstdint>
++#include <memory>
+ #include <optional>
+ #include <vector>
+ 
+ #include "chrome/browser/ui/webui/grips/grips_ui.h"
+ 
+ #include "base/functional/callback_helpers.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/escape.h"
++#include "base/supports_user_data.h"
+ #include "base/values.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/common/url_constants.h"
+@@
+ #include "services/network/public/mojom/content_security_policy.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
++#include "ui/base/base_window.h"
+ #include "ui/webui/webui_util.h"
+@@
+ void ConfigureExamObserver(content::WebContents* web_contents,
+                            const std::string& source_host);
+ void DeactivateExamObserver(content::WebContents* web_contents);
+ 
++// Tracks whether BYOD changed the browser window's fullscreen state so the
++// previous state can be restored when the exam ends. This is profile-scoped,
++// allowing the WebUI handler to be recreated when the tab navigates away from
++// grips://exam.
++class GripsFullscreenState : public base::SupportsUserData::Data {
++ public:
++  explicit GripsFullscreenState(bool restore_on_clear)
++      : restore_on_clear(restore_on_clear) {}
++  const bool restore_on_clear;
++};
++
++int kGripsFullscreenStateKey = 0;
++
++void SetByodBrowserFullscreen(Profile* profile,
++                              content::WebContents* web_contents,
++                              bool required) {
++  if (!profile || !web_contents)
++    return;
++  BrowserWindowInterface* browser =
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
++  if (!browser || !browser->GetWindow())
++    return;
++
++  if (required) {
++    // Do not overwrite the original state if a second activation request
++    // arrives while the exam is already active.
++    if (profile->GetUserData(&kGripsFullscreenStateKey))
++      return;
++    const bool was_fullscreen = browser->GetWindow()->IsFullscreen();
++    profile->SetUserData(
++        &kGripsFullscreenStateKey,
++        std::make_unique<GripsFullscreenState>(!was_fullscreen));
++    if (!was_fullscreen)
++      chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
++    return;
++  }
++
++  auto* state = static_cast<GripsFullscreenState*>(
++      profile->GetUserData(&kGripsFullscreenStateKey));
++  if (!state)
++    return;
++  const bool restore = state->restore_on_clear;
++  profile->SetUserData(&kGripsFullscreenStateKey, nullptr);
++  if (restore && browser->GetWindow()->IsFullscreen())
++    chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
++}
++
+ class GripsExamNetworkMessageHandler : public content::WebUIMessageHandler {
+@@
+     web_ui()->RegisterMessageCallback(
+         "clearByodTunnelConfig",
+         base::BindRepeating(&GripsExamNetworkMessageHandler::HandleClear,
+                             base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "setByodFullscreen",
++        base::BindRepeating(
++            &GripsExamNetworkMessageHandler::HandleFullscreen,
++            base::Unretained(this)));
+@@
+   void HandleClear(const base::ListValue&) {
+@@
+     DeactivateExamObserver(web_ui()->GetWebContents());
+   }
++
++  void HandleFullscreen(const base::ListValue& args) {
++    if (args.empty())
++      return;
++    const bool* required = args[0].GetIfBool();
++    if (!required)
++      return;
++    SetByodBrowserFullscreen(Profile::FromWebUI(web_ui()),
++                              web_ui()->GetWebContents(), *required);
++  }
+ };

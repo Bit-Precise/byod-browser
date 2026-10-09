@@ -1,0 +1,28 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+--- a/chrome/browser/ui/webui/grips/grips_ui.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -299,6 +299,24 @@
+     if (callback.scheme() == "grips" &&
+         (callback.host() == "exam" || callback.host() == "exam.cs.ac.cn")) {
+       return;
+     }
++
++    // The OIDC callback returns to an ordinary HTTPS marker first. Chromium
++    // can block an HTTP redirect directly from HTTPS to a custom scheme as an
++    // external-protocol launch. This observer belongs to the original Grips
++    // WebContents, so complete the same-tab return natively after the HTTPS
++    // marker has committed.
++    std::string auth_complete;
++    if (callback.scheme() == "https" && callback.host() == "exam.cs.ac.cn" &&
++        callback.path() == "/" &&
++        net::GetValueForKeyInQuery(callback, "auth", &auth_complete) &&
++        auth_complete == "1") {
++      content::OpenURLParams params(
++          GURL("grips://exam.cs.ac.cn/?auth=1"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB,
++          ui::PAGE_TRANSITION_AUTO_TOPLEVEL, false);
++      web_contents()->OpenURL(params, base::NullCallback());
++      return;
++    }
+
+     // Handle the trusted control-plane callback before the active-exam guard.

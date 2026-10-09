@@ -1,0 +1,18 @@
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+--- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+@@ -355,5 +355,12 @@ bool ChromeWebUIControllerFactory::IsWebUIAllowedToMakeNetworkRequests(
+   // If you are adding a new host to this list, please file a corresponding bug
+   // to track its removal. See https://crbug.com/40091019 for the metabug.
+   return
++      // BYOD exam bootstrap fetches its signed configuration and OIDC session
++      // state from the exam control plane. Keep the privileged WebUI origin
++      // isolated, but allow only the two exact grips exam hosts to use the
++      // normal network loader for HTTPS requests.
++      (origin.scheme() == chrome::kGripsScheme &&
++       (origin.host() == chrome::kGripsExamHost ||
++        origin.host() == chrome::kGripsTrustedExamHost)) ||
+       // https://crbug.com/40571286
+       origin.host() == chrome::kChromeUISyncConfirmationHost ||
+       // https://crbug.com/41382586
+       origin.host() == chrome::kChromeUIInspectHost ||

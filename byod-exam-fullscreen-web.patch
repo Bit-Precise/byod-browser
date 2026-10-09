@@ -1,0 +1,41 @@
+--- a/chrome/browser/resources/grips/exam.ts
++++ b/chrome/browser/resources/grips/exam.ts
+@@
+-  policy: {alg: string, key_id: string, document: {exam_id?: string, allowed_origins?: string[], session?: {heartbeat_seconds?: number}}, signature: string},
++  policy: {alg: string, key_id: string, document: {exam_id?: string, allowed_origins?: string[], browser?: {require_fullscreen?: boolean}, session?: {heartbeat_seconds?: number}}, signature: string},
+ };
+@@
+ function clearNativeTunnelConfig() {
+   const nativeChrome = nativeChromeBridge();
+   if (nativeChrome && typeof nativeChrome.send === 'function') {
+     nativeChrome.send('clearByodTunnelConfig');
++    // The native handler restores the pre-exam fullscreen state, if it
++    // entered fullscreen for this session.
++    nativeChrome.send('setByodFullscreen', [false]);
+   }
+ }
+@@
+ function setNativeTunnelConfig(config: {sourceHost: string, proxyHost: string,
+@@
+   nativeChrome.send('setByodTunnelConfig', [config]);
+ }
+ 
++function setNativeFullscreen(required: boolean) {
++  const nativeChrome = nativeChromeBridge();
++  if (!nativeChrome || typeof nativeChrome.send !== 'function') {
++    if (required) {
++      throw new Error('BYOD fullscreen control is unavailable');
++    }
++    return;
++  }
++  nativeChrome.send('setByodFullscreen', [required]);
++}
++
+ async function activateTunnel(config: ExamConfig, sessionId: string,
+@@
+   setNativeTunnelConfig({sourceHost: config.exam.source_host || new URL(config.exam.source_origin).hostname,
+     proxyHost: endpointURL.hostname, proxyPort: Number(endpointURL.port || 8788),
+     endpointId: ticket.endpoint_id, ticket: ticket.ticket,
+     nonce: Array.from(nonce), proof: Array.from(new Uint8Array(proofBuffer))});
++  setNativeFullscreen(config.policy.document?.browser?.require_fullscreen === true);
+ }

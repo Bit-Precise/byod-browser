@@ -1,0 +1,12 @@
+diff --git a/chrome/browser/resources/grips/login.html b/chrome/browser/resources/grips/login.html
+--- a/chrome/browser/resources/grips/login.html
++++ b/chrome/browser/resources/grips/login.html
+@@ -29,7 +29,7 @@
+         <div id="providers" class="provider-list"></div>
+       </div>
+       <p id="oidc-help" class="muted" hidden>
+-        Complete sign-in in the new tab, then return here.
++        Continuing sign-in in this tab...
+       </p>
+     </main>
+     <script type="module" src="/login.js"></script>

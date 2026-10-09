@@ -1,0 +1,17 @@
+--- a/chrome/browser/resources/grips/exam.ts
++++ b/chrome/browser/resources/grips/exam.ts
+@@ -143,6 +143,13 @@
+       const state = await response.json();
+       if (state.state === 'suspended') {
+         showInvalidLink('The exam session was suspended. Contact the proctor to unlock it.');
++        return;
++      }
++      if (state.state === 'active') {
++        // Tunnel tickets are intentionally short-lived. Refresh the ticket
++        // with the session heartbeat so new HTTPS connections keep working
++        // throughout a long exam without changing the signed policy.
++        await activateTunnel(config, sessionId, token);
+       }
+     } catch {
+       status.textContent = 'Exam service heartbeat failed';
+     }

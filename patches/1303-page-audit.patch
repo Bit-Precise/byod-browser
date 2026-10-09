@@ -1,0 +1,505 @@
+--- a/chrome/browser/ui/webui/grips/grips_ui.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include <cstdint>
++#include <deque>
+ #include <memory>
+ #include <optional>
+ #include <vector>
+@@ -11,6 +12,13 @@
+ 
+ #include "base/functional/callback_helpers.h"
+ #include "base/functional/bind.h"
++#include "base/json/json_writer.h"
++#include "base/logging.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/uuid.h"
+ #include "base/strings/escape.h"
+ #include "base/supports_user_data.h"
+ #include "base/values.h"
+@@ -25,6 +33,7 @@
+ #include "chrome/grit/grips_resources.h"
+ #include "chrome/grit/grips_resources_map.h"
+ #include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/byod_navigation_audit.h"
+ #include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/web_ui.h"
+ #include "content/public/browser/web_ui_data_source.h"
+@@ -33,6 +42,14 @@
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/web_contents_user_data.h"
+ #include "net/base/url_util.h"
++#include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
++#include "net/http/http_response_headers.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "services/network/public/mojom/content_security_policy.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "ui/base/page_transition_types.h"
+@@ -46,9 +63,129 @@
+ void ConfigureExamObserver(content::WebContents* web_contents,
+                            const std::string& source_host,
+                            std::vector<url::Origin> allowed_origins,
+-                           std::optional<double> exam_ends_at_ms);
++                           std::optional<double> exam_ends_at_ms,
++                           const std::string& audit_session_id,
++                           const std::string& audit_token);
+ void DeactivateExamObserver(content::WebContents* web_contents);
+ 
++std::string AuditURL(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
++    return std::string();
++  GURL::Replacements replacements;
++  replacements.ClearUsername();
++  replacements.ClearPassword();
++  replacements.ClearQuery();
++  replacements.ClearRef();
++  GURL clean = url.ReplaceComponents(replacements);
++  if (clean.spec().size() > 4096)
++    return clean.DeprecatedGetOriginAsURL().spec();
++  return clean.spec();
++}
++
++// Independent of the tab lifetime so a tab-close event can finish sending.
++// Only in-memory, bounded retries; browser shutdown/OS kill is best effort.
++class GripsAuditReporter : public base::RefCounted<GripsAuditReporter> {
++ public:
++  GripsAuditReporter(scoped_refptr<network::SharedURLLoaderFactory> factory,
++                    std::string session_id, std::string token)
++      : factory_(std::move(factory)), session_id_(std::move(session_id)),
++        token_(std::move(token)),
++        endpoint_("https://exam.cs.ac.cn/v1/sessions/" + session_id_ + "/events") {}
++
++  const std::string& session_id() const { return session_id_; }
++
++  void Report(base::DictValue event) {
++    event.Set("client_event_id", base::Uuid::GenerateRandomV4().AsLowercaseString());
++    event.Set("observed_at_ms", static_cast<double>(
++        base::Time::Now().InMillisecondsSinceUnixEpoch()));
++    if (pending_.size() >= 256) {
++      LOG(WARNING) << "BYOD audit queue full; observation dropped";
++      return;
++    }
++    pending_.push_back(std::move(event));
++    if (!busy_)
++      Send();
++  }
++
++ private:
++  friend class base::RefCounted<GripsAuditReporter>;
++  ~GripsAuditReporter() = default;
++
++  void Send() {
++    if (pending_.empty()) { busy_ = false; return; }
++    busy_ = true;
++    // A single event stays below the server's 64 KiB limit even for long
++    // URLs. IDs remain stable across retries, including lost acknowledgments.
++    base::ListValue events;
++    events.Append(pending_.front().Clone());
++    base::DictValue payload;
++    payload.Set("events", std::move(events));
++    // JSON's numeric type includes integers; omit the forced ".0" suffix on
++    // our exactly representable Unix milliseconds for the int64 API field.
++    auto body = base::WriteJsonWithOptions(
++        payload, base::JSONWriter::OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION);
++    CHECK(body);
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = endpoint_;
++    request->method = "POST";
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    request->redirect_mode = network::mojom::RedirectMode::kError;
++    request->load_flags = net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_PROXY;
++    request->headers.SetHeader("Authorization", "Bearer " + token_);
++    static constexpr auto annotation = net::DefineNetworkTrafficAnnotation(
++        "byod_exam_page_audit", R"(
++          semantics {
++            sender: "BYOD Exam Browser"
++            description: "Reports page-only observations during an active exam."
++            trigger: "Exam page navigation or leaving the exam."
++            data: "Session bearer token, sanitized page URL, actual network route,
++                   client timestamp and lifecycle reason. No query or fragment."
++            destination: OTHER
++            destination_other: "The trusted BYOD exam control service."
++          }
++          policy {
++            cookies_allowed: NO
++            setting: "Only active in the examination tab after exam start."
++            policy_exception_justification: "Required exam audit."
++          })");
++    loader_ = network::SimpleURLLoader::Create(std::move(request), annotation);
++    loader_->AttachStringForUpload(*body, "application/json");
++    loader_->SetTimeoutDuration(base::Seconds(10));
++    loader_->DownloadToString(factory_.get(),
++        base::BindOnce(&GripsAuditReporter::OnComplete, base::WrapRefCounted(this)),
++        1024);
++  }
++
++  void OnComplete(std::optional<std::string> body) {
++    int status = 0;
++    if (loader_->ResponseInfo() && loader_->ResponseInfo()->headers)
++      status = loader_->ResponseInfo()->headers->response_code();
++    const bool ok = loader_->NetError() == net::OK && status == 200;
++    loader_.reset();
++    if (!ok && (status == 0 || status == 429 || status >= 500) && ++retries_ <= 4) {
++      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&GripsAuditReporter::Send, base::WrapRefCounted(this)),
++          base::Seconds(status == 429 ? 60 : 1 << retries_));
++      return;
++    }
++    if (!ok)
++      LOG(WARNING) << "BYOD audit delivery failed; HTTP status=" << status;
++    pending_.pop_front();
++    retries_ = 0;
++    Send();
++  }
++
++  scoped_refptr<network::SharedURLLoaderFactory> factory_;
++  const std::string session_id_;
++  const std::string token_;
++  const GURL endpoint_;
++  std::deque<base::DictValue> pending_;
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  bool busy_ = false;
++  int retries_ = 0;
++};
++
+ // Tracks whether BYOD changed the browser window's fullscreen state so the
+ // previous state can be restored when the exam ends. This is profile-scoped,
+ // allowing the WebUI handler to be recreated when the tab navigates away from
+@@ -220,6 +357,8 @@
+     const std::string* proxy_host = dict->FindString("proxyHost");
+     const std::string* endpoint_id = dict->FindString("endpointId");
+     const std::string* ticket = dict->FindString("ticket");
++    const std::string* audit_session_id = dict->FindString("auditSessionId");
++    const std::string* audit_token = dict->FindString("auditToken");
+     std::optional<double> exam_ends_at_ms = dict->FindDouble("examEndsAtMs");
+     std::optional<int> proxy_port = dict->FindInt("proxyPort");
+     std::vector<url::Origin> allowed_origins;
+@@ -230,6 +369,16 @@
+         !ReadTunnelHosts(*dict, &tunnel_hosts)) {
+       return;
+     }
++    // The trusted HTTPS shell is the only bridge sender. Never allow it to
++    // choose a reporting origin or inject headers/path segments.
++    if (!audit_session_id || audit_session_id->empty() ||
++        audit_session_id->size() > 128 ||
++        audit_session_id->find_first_not_of(
++            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos ||
++        !audit_token || audit_token->empty() || audit_token->size() > 512 ||
++        audit_token->find_first_not_of(
++            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos)
++      return;
+     Profile* profile = Profile::FromWebUI(web_ui());
+     if (!profile) {
+       return;
+@@ -243,7 +392,8 @@
+     profile->GetDefaultStoragePartition()->GetNetworkContext()->
+         SetByodTunnelConfig(std::move(config));
+     ConfigureExamObserver(web_ui()->GetWebContents(), *source_host,
+-                           std::move(allowed_origins), exam_ends_at_ms);
++                           std::move(allowed_origins), exam_ends_at_ms,
++                           *audit_session_id, *audit_token);
+   }
+ 
+   void HandleClear(const base::ListValue&) {
+@@ -292,7 +442,8 @@
+   friend void ConfigureExamObserver(content::WebContents*,
+                                     const std::string&,
+                                     std::vector<url::Origin>,
+-                                    std::optional<double>);
++                                    std::optional<double>,
++                                    const std::string&, const std::string&);
+   friend void DeactivateExamObserver(content::WebContents*);
+   friend class content::WebContentsUserData<GripsExamCallbackObserver>;
+   explicit GripsExamCallbackObserver(content::WebContents* web_contents)
+@@ -300,7 +451,11 @@
+         content::WebContentsUserData<GripsExamCallbackObserver>(*web_contents) {}
+ 
+   void DidFinishNavigation(content::NavigationHandle* handle) override {
+-    if (!handle->IsInMainFrame() || !handle->HasCommitted())
++    if (!handle->IsInPrimaryMainFrame())
++      return;
++    if (auditing_)
++      ReportNavigation(handle, false);
++    if (!handle->HasCommitted())
+       return;
+     const GURL callback = handle->GetURL();
+     std::string ended;
+@@ -317,6 +472,7 @@
+     // call /v1/exams/{id}/complete and clear the native policy.
+     if (callback.scheme() == "grips" &&
+         (callback.host() == "exam" || callback.host() == "exam.cs.ac.cn")) {
++      LeaveExam("control_page");
+       return;
+     }
+ 
+@@ -356,6 +512,7 @@
+         return;
+       }
+       control_url_ = target;
++      LeaveExam("control_page");
+       active_exam_ = false;
+       target_url_ = GURL();
+       const std::string exam_url =
+@@ -428,6 +585,20 @@
+         target_url_.is_empty()) {
+       return;
+     }
++    // Closing a tab first makes it hidden. Defer the background path so a
++    // synchronous tab destruction records tab_closed instead and never tries
++    // to navigate a tab that is being torn down.
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(&GripsExamCallbackObserver::HandleBackground,
++                       weak_factory_.GetWeakPtr()));
++  }
++
++  void HandleBackground() {
++    if (!active_exam_ || web_contents()->IsBeingDestroyed() ||
++        web_contents()->GetVisibility() != content::Visibility::HIDDEN)
++      return;
++    LeaveExam("background");
+     const std::string exam_url =
+         "grips://exam.cs.ac.cn/?target=" +
+         base::EscapeQueryParamValue(
+@@ -443,6 +614,7 @@
+   }
+ 
+   void OnExamExpired() {
++    LeaveExam("expired");
+     Profile* profile = Profile::FromBrowserContext(
+         web_contents()->GetBrowserContext());
+     if (profile) {
+@@ -459,12 +631,60 @@
+   }
+ 
+   bool active_exam_ = false;
++  bool auditing_ = false;
++  scoped_refptr<GripsAuditReporter> audit_;
+   GURL target_url_;
+   GURL control_url_;
+   std::string source_host_;
+   std::vector<url::Origin> allowed_origins_;
+   base::OneShotTimer deadline_timer_;
+ 
++  void DidRedirectNavigation(content::NavigationHandle* handle) override {
++    if (auditing_ && handle->IsInPrimaryMainFrame())
++      ReportNavigation(handle, true);
++  }
++
++  void WebContentsDestroyed() override { LeaveExam("tab_closed"); }
++
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
++    LeaveExam("renderer_gone");
++  }
++
++  void ReportNavigation(content::NavigationHandle* handle, bool redirect) {
++    GURL url = handle->GetURL();
++    const auto& chain = handle->GetRedirectChain();
++    if (redirect && chain.size() >= 2)
++      url = chain[chain.size() - 2];
++    const auto route = content::GetByodNavigationAudit(handle);
++    base::DictValue event;
++    event.Set("type", redirect ? "page_redirect" : "page_navigation");
++    event.Set("url", AuditURL(url));
++    if (redirect)
++      event.Set("redirect_url", AuditURL(handle->GetURL()));
++    event.Set("navigation_id", base::NumberToString(handle->GetNavigationId()));
++    event.Set("route", url.SchemeIsHTTPOrHTTPS() ? route.route : "none");
++    event.Set("route_reason", url.SchemeIsHTTPOrHTTPS() ? route.reason : "non_http");
++    event.Set("outcome", redirect ? "redirect" :
++        handle->GetNetErrorCode() == net::ERR_ABORTED ? "cancelled" :
++        handle->GetNetErrorCode() != net::OK ? "failed" :
++        handle->HasCommitted() ? "committed" : "cancelled");
++    event.Set("net_error", handle->GetNetErrorCode());
++    if (handle->GetResponseHeaders())
++      event.Set("http_status", handle->GetResponseHeaders()->response_code());
++    audit_->Report(std::move(event));
++  }
++
++  void LeaveExam(const char* reason) {
++    if (!auditing_ || !audit_)
++      return;
++    base::DictValue event;
++    event.Set("type", "exam_left");
++    event.Set("reason", reason);
++    event.Set("url", AuditURL(web_contents()->GetLastCommittedURL()));
++    audit_->Report(std::move(event));
++    auditing_ = false;
++  }
++
+   bool IsAllowedNavigation(const GURL& url) const {
+     if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
+       return false;
+@@ -486,7 +706,22 @@
+  public:
+   void SetSourceHost(const std::string& source_host,
+                      std::vector<url::Origin> allowed_origins,
+-                     std::optional<double> exam_ends_at_ms) {
++                     std::optional<double> exam_ends_at_ms,
++                     const std::string& audit_session_id,
++                     const std::string& audit_token) {
++    if (!audit_ || audit_->session_id() != audit_session_id) {
++      LeaveExam("session_replaced");
++      audit_ = base::MakeRefCounted<GripsAuditReporter>(
++          web_contents()->GetBrowserContext()->GetDefaultStoragePartition()->
++              GetURLLoaderFactoryForBrowserProcess(), audit_session_id, audit_token);
++    }
++    if (!auditing_) {
++      auditing_ = true;
++      base::DictValue event;
++      event.Set("type", "exam_entered");
++      event.Set("reason", "started");
++      audit_->Report(std::move(event));
++    }
+     deadline_timer_.Stop();
+     source_host_ = source_host;
+     allowed_origins_ = std::move(allowed_origins);
+@@ -512,6 +747,8 @@
+   }
+ 
+   void Reset() {
++    LeaveExam("policy_cleared");
++    audit_.reset();
+     deadline_timer_.Stop();
+     active_exam_ = false;
+     target_url_ = GURL();
+@@ -521,6 +758,7 @@
+   }
+ 
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
++  base::WeakPtrFactory<GripsExamCallbackObserver> weak_factory_{this};
+ };
+ 
+ WEB_CONTENTS_USER_DATA_KEY_IMPL(GripsExamCallbackObserver);
+@@ -528,14 +766,16 @@
+ void ConfigureExamObserver(content::WebContents* web_contents,
+                            const std::string& source_host,
+                            std::vector<url::Origin> allowed_origins,
+-                           std::optional<double> exam_ends_at_ms) {
++                           std::optional<double> exam_ends_at_ms,
++                           const std::string& audit_session_id,
++                           const std::string& audit_token) {
+   if (!web_contents)
+     return;
+   GripsExamCallbackObserver::CreateForWebContents(web_contents);
+   if (auto* observer =
+           GripsExamCallbackObserver::FromWebContents(web_contents)) {
+     observer->SetSourceHost(source_host, std::move(allowed_origins),
+-                            exam_ends_at_ms);
++                            exam_ends_at_ms, audit_session_id, audit_token);
+   }
+ }
+ 
+--- a/chrome/browser/ui/webui/grips/BUILD.gn
++++ b/chrome/browser/ui/webui/grips/BUILD.gn
+@@ -23,6 +23,7 @@
+     "//chrome/common",
+     "//net",
+     "//services/network/public/mojom",
++    "//services/network/public/cpp",
+     "//ui/base",
+     "//url",
+   ]
+--- a/content/public/browser/navigation_handle.cc
++++ b/content/public/browser/navigation_handle.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/byod_navigation_audit.h"
+ 
+ #include <utility>
+ 
+@@ -10,9 +11,44 @@
+ #include "content/browser/renderer_host/navigator.h"
+ #include "content/browser/web_contents/web_contents_impl.h"
+ #include "net/ssl/ssl_info.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ 
+ namespace content {
+ 
++ByodNavigationAudit GetByodNavigationAudit(NavigationHandle* handle) {
++  if (handle->IsSameDocument())
++    return {"none", "same_document"};
++  if (handle->IsServedFromBackForwardCache())
++    return {"none", "back_forward_cache"};
++  // A failed final request can still retain the previous redirect response.
++  // Do not mistake that hop's route for the failed destination's route.
++  if (handle->GetNetErrorCode() != 0)
++    return {};
++  const auto* response = NavigationRequest::From(handle)->response();
++  if (!response)
++    return {};
++  // A service worker may synthesize a response or issue a different fetch.
++  // Its response proxy chain does not reliably describe this navigation.
++  if (response->was_fetched_via_service_worker)
++    return {"unknown", "service_worker"};
++  if (!response->network_accessed) {
++    if (response->was_fetched_via_cache || response->was_in_prefetch_cache)
++      return {"none", "cache"};
++    return {"none", "unknown"};
++  }
++  const auto& chain = response->proxy_chain;
++  if (!chain.IsValid())
++    return {"unknown", "network"};
++  if (chain.is_direct())
++    return {"direct", "network"};
++  for (const auto& proxy : chain.proxy_servers()) {
++    if (proxy.host_port_pair().host() == "byod-xhttp.invalid" &&
++        proxy.host_port_pair().port() == 1)
++      return {"tunnel", "network"};
++  }
++  return {"proxy", "network"};
++}
++
+ WebContents* NavigationHandle::GetWebContents() {
+   // The NavigationRequest cannot access the WebContentsImpl as it would be a
+   // layering violation, hence the cast here.
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -274,6 +274,7 @@
+     "navigation_entry_restore_context.h",
+     "navigation_handle.cc",
+     "navigation_handle.h",
++    "byod_navigation_audit.h",
+     "navigation_handle_timing.cc",
+     "navigation_handle_timing.h",
+     "navigation_handle_user_data.h",
+--- /dev/null
++++ b/content/public/browser/byod_navigation_audit.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_
++#define CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_
++
++#include "content/common/content_export.h"
++
++namespace content {
++class NavigationHandle;
++
++struct ByodNavigationAudit {
++  const char* route = "unknown";
++  const char* reason = "not_connected";
++};
++
++// Read response metadata without adding a method to the widely included
++// NavigationHandle interface. Only call during DidRedirect/FinishNavigation.
++CONTENT_EXPORT ByodNavigationAudit GetByodNavigationAudit(
++    NavigationHandle* handle);
++}  // namespace content
++
++#endif  // CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_

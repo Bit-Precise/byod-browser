@@ -1,0 +1,35 @@
+diff --git a/chrome/browser/ui/startup/url_util.cc b/chrome/browser/ui/startup/url_util.cc
+--- a/chrome/browser/ui/startup/url_util.cc
++++ b/chrome/browser/ui/startup/url_util.cc
+@@ -80,8 +80,11 @@ bool ValidateLaunchUrlWebUnsafe(const GURL& url) {
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
+   auto* policy = content::ChildProcessSecurityPolicy::GetInstance();
++  // Grips pages are privileged browser-owned WebUIs. Allow explicit native
++  // launches (command line and OS events), but keep them out of WebSafe flows.
+   return policy->IsWebSafeScheme(url.GetScheme()) ||
+-         url.SchemeIs(url::kFileScheme) || url_scheme_is_chrome ||
++         url.SchemeIs(url::kFileScheme) ||
++         url.SchemeIs(chrome::kGripsScheme) || url_scheme_is_chrome ||
+          url_scheme_is_content || url_points_to_an_approved_settings_page ||
+          url.spec() == url::kAboutBlankURL;
+ }
+diff --git a/chrome/browser/ui/startup/url_util_unittest.cc b/chrome/browser/ui/startup/url_util_unittest.cc
+--- a/chrome/browser/ui/startup/url_util_unittest.cc
++++ b/chrome/browser/ui/startup/url_util_unittest.cc
+@@ -20,6 +20,7 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebUnsafe) {
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("https://google.com")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("file:///tmp/test")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("about:blank")));
++  EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("grips://login/")));
+ 
+   // chrome:// settings
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -59,6 +60,7 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebSafe) {
+   // Privileged or local schemes should be rejected in WebSafe context.
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("file:///tmp/test")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("chrome://settings")));
++  EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("grips://login/")));
+   EXPECT_FALSE(
+       ValidateLaunchUrlWebSafe(GURL("chrome://settings/resetProfileSettings")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("javascript:alert(1)")));

@@ -1,0 +1,13 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+--- a/chrome/browser/ui/webui/grips/grips_page_handlers.cc
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -90,7 +90,7 @@ class GripsOidcNavigationObserver final
+     }
+ 
+     const GURL& url = navigation_handle->GetURL();
+-    if (url::Origin::Create(url) != server_origin_ || url.path_piece() != "/" ||
+-        url.query_piece() != kOidcCompleteQuery) {
++    if (url::Origin::Create(url) != server_origin_ || url.path() != "/" ||
++        url.query() != kOidcCompleteQuery) {
+       return;
+     }

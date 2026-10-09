@@ -1,0 +1,813 @@
+diff --git a/chrome/common/url_constants.h b/chrome/common/url_constants.h
+--- a/chrome/common/url_constants.h
++++ b/chrome/common/url_constants.h
+@@ -156,6 +156,10 @@ inline constexpr char kChromeSearchRemoteNtpHost[] = "remote-ntp";
+ //     there are additional Instant-PID checks that make sure the request is
+ //     coming from a blessed Instant process, and deny the request.
+ inline constexpr char kChromeSearchScheme[] = "chrome-search";
++inline constexpr char kGripsScheme[] = "grips";
++inline constexpr char kGripsExamHost[] = "exam";
++inline constexpr char kGripsTrustedExamHost[] = "exam.cs.ac.cn";
++inline constexpr char kGripsExamUrl[] = "grips://exam/";
+ 
+ // This is the base URL of content that can be embedded in chrome://new-tab-page
+ // using an <iframe>. The embedded untrusted content can make web requests and
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -193,7 +193,7 @@ static const char* const kChromeStandardURLSchemes[] = {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS)
+     chrome::kChromeNativeScheme,        chrome::kChromeSearchScheme,
+-    dom_distiller::kDomDistillerScheme,
++    chrome::kGripsScheme,               dom_distiller::kDomDistillerScheme,
+ #if BUILDFLAG(IS_ANDROID)
+     content::kAndroidAppScheme,
+ #endif
+@@ -227,6 +227,10 @@ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+   // chrome-search: resources shouldn't trigger insecure content warnings.
+   schemes->secure_schemes.push_back(chrome::kChromeSearchScheme);
+ 
++  // grips: browser-owned bootstrap pages are packaged with the browser.
++  // Exam content itself continues to use HTTPS web origins.
++  schemes->secure_schemes.push_back(chrome::kGripsScheme);
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Treat extensions as secure because communication with them is entirely in
+   // the browser, so there is no danger of manipulation or eavesdropping on
+diff --git a/chrome/browser/profiles/profile_io_data.cc b/chrome/browser/profiles/profile_io_data.cc
+--- a/chrome/browser/profiles/profile_io_data.cc
++++ b/chrome/browser/profiles/profile_io_data.cc
+@@ -55,6 +55,7 @@ bool ProfileIOData::IsHandledProtocol(std::string_view scheme) {
+       url::kAboutScheme,
+       url::kBlobScheme,
+       url::kFileSystemScheme,
++      chrome::kGripsScheme,
+       chrome::kChromeSearchScheme,
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+     BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -194,6 +194,7 @@
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/webid/identity_dialog_controller.h"
+ #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
++#include "chrome/browser/ui/webui/grips/grips_url_handler.h"
+ #include "chrome/browser/ui/webui/internal_debug_pages_disabled/internal_debug_pages_disabled_ui.h"
+ #include "chrome/browser/ui/webui/log_web_ui_url.h"
+ #include "chrome/browser/universal_web_contents_observers.h"
+@@ -2231,6 +2232,7 @@ void ChromeContentBrowserClient::GetAdditionalWebUISchemes(
+   additional_schemes->emplace_back(chrome::kChromeSearchScheme);
+   additional_schemes->emplace_back(dom_distiller::kDomDistillerScheme);
+   additional_schemes->emplace_back(content::kChromeDevToolsScheme);
++  additional_schemes->emplace_back(chrome::kGripsScheme);
+ }
+ 
+ bool ChromeContentBrowserClient::IsInternalScheme(const GURL& url) {
+@@ -5194,6 +5196,9 @@ bool ChromeContentBrowserClient::
+ 
+ void ChromeContentBrowserClient::BrowserURLHandlerCreated(
+     BrowserURLHandler* handler) {
++  handler->AddHandlerPair(&grips::HandleGripsExamURL,
++                          BrowserURLHandler::null_handler());
++
+   // The group policy NTP URL handler must be registered before the other NTP
+   // URL handlers below. Also register it before the "parts" handlers, so the
+   // NTP policy takes precedence over extensions that override the NTP.
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+--- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+@@ -73,6 +73,7 @@
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
+ #include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
+ #include "chrome/browser/ui/webui/downloads/downloads_ui.h"
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
+ #include "chrome/browser/ui/webui/history/history_ui.h"
+ #include "chrome/browser/ui/webui/management/management_ui.h"
+ #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
+@@ -159,6 +160,13 @@ WebUIController* NewWebUI(WebUI* web_ui, const GURL& url) {
+ // associated with it.
+ WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
+                                              const GURL& url) {
++  if (url.SchemeIs(chrome::kGripsScheme)) {
++    if (url.host() == chrome::kGripsExamHost) {
++      return &NewWebUI<GripsExamUI>;
++    }
++    return nullptr;
++  }
++
+   // This will get called a lot to check all URLs, so do a quick check of other
+   // schemes to filter out most URLs.
+ #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
+diff --git a/chrome/browser/ui/startup/url_util.cc b/chrome/browser/ui/startup/url_util.cc
+--- a/chrome/browser/ui/startup/url_util.cc
++++ b/chrome/browser/ui/startup/url_util.cc
+@@ -80,8 +80,9 @@ bool ValidateLaunchUrlWebUnsafe(const GURL& url) {
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
+   auto* policy = content::ChildProcessSecurityPolicy::GetInstance();
+   return policy->IsWebSafeScheme(url.GetScheme()) ||
+-         url.SchemeIs(url::kFileScheme) || url_scheme_is_chrome ||
++         url.SchemeIs(url::kFileScheme) ||
++         url.SchemeIs(chrome::kGripsScheme) || url_scheme_is_chrome ||
+          url_scheme_is_content || url_points_to_an_approved_settings_page ||
+          url.spec() == url::kAboutBlankURL;
+ }
+diff --git a/chrome/browser/ui/startup/url_util_unittest.cc b/chrome/browser/ui/startup/url_util_unittest.cc
+--- a/chrome/browser/ui/startup/url_util_unittest.cc
++++ b/chrome/browser/ui/startup/url_util_unittest.cc
+@@ -20,6 +20,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebUnsafe) {
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("https://google.com")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("file:///tmp/test")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("about:blank")));
++  EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(
++      GURL("grips://exam.cs.ac.cn/example-exam")));
+ 
+   // chrome:// settings
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -61,6 +63,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebSafe) {
+   // Privileged or local schemes should be rejected in WebSafe context.
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("file:///tmp/test")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("chrome://settings")));
++  EXPECT_FALSE(ValidateLaunchUrlWebSafe(
++      GURL("grips://exam.cs.ac.cn/example-exam")));
+   EXPECT_FALSE(
+       ValidateLaunchUrlWebSafe(GURL("chrome://settings/resetProfileSettings")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("javascript:alert(1)")));
+diff --git a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
+--- a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
++++ b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+ 
+ #include "base/strings/utf_string_conversions.h"
++#include "chrome/common/url_constants.h"
+ #include "chrome/test/base/testing_profile.h"
+ #include "content/public/test/fake_service_worker_context.h"
+ #include "content/public/test/test_storage_partition.h"
+@@ -59,5 +60,10 @@ TEST_F(ChromeAutocompleteSchemeClassifierTest, DevToolsUrl) {
+             metrics::OmniboxInputType::URL);
+ }
+ 
++TEST_F(ChromeAutocompleteSchemeClassifierTest, GripsUrl) {
++  EXPECT_EQ(scheme_classifier_->GetInputTypeForScheme(chrome::kGripsScheme),
++            metrics::OmniboxInputType::URL);
++}
++
+ // Can't test registered apps handling with mocking of shell_integration
+ // because shell_integration is implemented via namespace shell_integration.
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1073,6 +1073,7 @@ source_set("core") {
+     "//chrome/browser/ui/webui/engagement",
+     "//chrome/browser/ui/webui/internal_debug_pages_disabled",
+     "//chrome/browser/ui/webui/location_internals",
++    "//chrome/browser/ui/webui/grips",
+     "//chrome/browser/ui/webui/media",
+     "//chrome/browser/ui/webui/omnibox",
+     "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -81,6 +81,7 @@ source_set("configs") {
+     "//chrome/browser/ui/webui/interstitials",
+     "//chrome/browser/ui/webui/local_state",
+     "//chrome/browser/ui/webui/location_internals",
++    "//chrome/browser/ui/webui/grips",
+     "//chrome/browser/ui/webui/media",
+     "//chrome/browser/ui/webui/metrics_internals",
+     "//chrome/browser/ui/webui/net_internals",
+diff --git a/chrome/browser/extensions/BUILD.gn b/chrome/browser/extensions/BUILD.gn
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -2611,6 +2611,7 @@ source_set("browser_tests") {
+       "//chrome/browser/ui/search:test_support_ui",
+       "//chrome/browser/ui/tabs/saved_tab_groups",
+       "//chrome/browser/ui/views/location_bar",
++      "//chrome/browser/ui/webui/grips:browser_tests",
+       "//chrome/browser/ui/webui/history_clusters:browser_tests",
+       "//chrome/browser/ui/webui/interstitials:browser_tests",
+       "//chrome/browser/ui/webui/location_internals:browser_tests",
+diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -232,6 +232,7 @@ template("chrome_extra_paks") {
+         "$root_gen_dir/chrome/gaia_auth_host_resources.pak",
+         "$root_gen_dir/chrome/glic_experimental_opt_in_resources.pak",
+         "$root_gen_dir/chrome/glic_untrusted_resources.pak",
++        "$root_gen_dir/chrome/grips_resources.pak",
+         "$root_gen_dir/chrome/history_resources.pak",
+         "$root_gen_dir/chrome/indigo_resources.pak",
+         "$root_gen_dir/chrome/inspect_resources.pak",
+@@ -277,6 +278,7 @@ template("chrome_extra_paks") {
+         "//chrome/browser/actor/resources:browser_resources",
+         "//chrome/browser/indigo/resources:browser_resources",
+         "//chrome/browser/resources/contextual_cueing/internals:resources",
++        "//chrome/browser/resources/grips:resources",
+         "//components/headless/command_handler",
+         "//content/browser/tracing:resources",
+       ]
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -537,6 +537,10 @@
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [4035],
+   },
++  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/grips/resources.grd": {
++    "META": {"sizes": {"includes": [10]}},
++    "includes": [4037],
++  },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/history/resources.grd": {
+     "META": {"sizes": {"includes": [60]}},
+     "includes": [4040],
+diff --git a/chrome/browser/ui/webui/grips/BUILD.gn b/chrome/browser/ui/webui/grips/BUILD.gn
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/BUILD.gn
+@@ -0,0 +1,44 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++source_set("grips") {
++  sources = [
++    "grips_ui.cc",
++    "grips_ui.h",
++    "grips_url_handler.cc",
++    "grips_url_handler.h",
++  ]
++
++  public_deps = [
++    "//content/public/browser",
++    "//ui/webui",
++  ]
++
++  deps = [
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/grips:resources",
++    "//chrome/common",
++    "//net",
++    "//services/network/public/mojom",
++    "//url",
++  ]
++}
++
++if (!is_android) {
++  source_set("browser_tests") {
++    testonly = true
++    defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
++    sources = [ "grips_ui_browsertest.cc" ]
++    deps = [
++      ":grips",
++      "//chrome/common",
++      "//chrome/test:test_support",
++      "//content/test:test_support",
++      "//net",
++      "//testing/gtest",
++      "//url",
++    ]
++  }
++}
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.h b/chrome/browser/ui/webui/grips/grips_url_handler.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
++
++class GURL;
++
++namespace content {
++class BrowserContext;
++}
++
++namespace grips {
++
++// Rewrites a public exam entry such as grips://exam.cs.ac.cn/course-101 to
++// the single browser-owned grips://exam/ WebUI. The HTTPS target is carried as
++// data; web content is never rendered under the privileged grips scheme.
++bool HandleGripsExamURL(GURL* url,
++                        content::BrowserContext* browser_context);
++
++}  // namespace grips
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.cc b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+@@ -0,0 +1,66 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_url_handler.h"
++
++#include <string>
++
++#include "base/strings/escape.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
++#include "chrome/common/url_constants.h"
++#include "url/gurl.h"
++#include "url/url_constants.h"
++
++namespace grips {
++namespace {
++
++GURL ErrorURL() {
++  return GURL(base::StrCat(
++      {chrome::kGripsExamUrl, "?error=invalid_exam_link"}));
++}
++
++bool IsValidPublicExamEntry(const GURL& url) {
++  if (!url.is_valid() || url.host() != chrome::kGripsTrustedExamHost ||
++      url.has_username() || url.has_password() || url.has_port() ||
++      url.has_ref()) {
++    return false;
++  }
++
++  // A concrete exam path is required. This deliberately rejects a bare
++  // domain so discovery cannot silently select an exam on the user's behalf.
++  return !url.path().empty() && url.path() != "/";
++}
++
++}  // namespace
++
++bool HandleGripsExamURL(GURL* url,
++                        content::BrowserContext* browser_context) {
++  if (!url || !url->SchemeIs(chrome::kGripsScheme)) {
++    return false;
++  }
++
++  // grips://exam/ is the one fixed privileged WebUI origin. Never rewrite it.
++  if (url->host() == chrome::kGripsExamHost) {
++    return false;
++  }
++
++  // The bare trusted exam origin opens the browser-owned exam-code screen.
++  // Do not manufacture an exam target until the student enters a valid code.
++  if (url->host() == chrome::kGripsTrustedExamHost &&
++      (url->path().empty() || url->path() == "/")) {
++    *url = GURL(chrome::kGripsExamUrl);
++    return true;
++  }
++
++  // Completion is a browser action and must stay in the current tab.
++  if (url->host() == chrome::kGripsTrustedExamHost &&
++      base::StartsWith(url->path(), "/exams/", base::CompareCase::SENSITIVE) &&
++      base::EndsWith(url->path(), "/complete", base::CompareCase::SENSITIVE)) {
++    const std::string path = url->path();
++    const std::string exam_id = path.substr(7, path.size() - 16);
++    if (exam_id.empty() || exam_id.find('/') != std::string::npos) {
++      *url = ErrorURL();
++      return true;
++    }
++    *url = GURL(base::StrCat({chrome::kGripsExamUrl,
++                              "?action=complete&exam_id=",
++                              base::EscapeQueryParamValue(exam_id, true)}));
++    return true;
++  }
+
++  if (!IsValidPublicExamEntry(*url)) {
++    *url = ErrorURL();
++    return true;
++  }
++
++  GURL::Replacements replacements;
++  replacements.SetSchemeStr(url::kHttpsScheme);
++  replacements.ClearRef();
++  const GURL target = url->ReplaceComponents(replacements);
++  if (!target.is_valid()) {
++    *url = ErrorURL();
++    return true;
++  }
++
++  *url = GURL(base::StrCat(
++      {chrome::kGripsExamUrl, "?target=",
++       base::EscapeQueryParamValue(target.spec(), true)}));
++  return true;
++}
++
++}  // namespace grips
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.h b/chrome/browser/ui/webui/grips/grips_ui.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.h
+@@ -0,0 +1,21 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++
++#include "ui/webui/mojo_web_ui_controller.h"
++
++class GripsExamUI : public ui::MojoWebUIController {
++ public:
++  explicit GripsExamUI(content::WebUI* web_ui);
++  GripsExamUI(const GripsExamUI&) = delete;
++  GripsExamUI& operator=(const GripsExamUI&) = delete;
++  ~GripsExamUI() override;
++
++ private:
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -0,0 +1,36 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/grit/grips_resources.h"
++#include "chrome/grit/grips_resources_map.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "services/network/public/mojom/content_security_policy.mojom.h"
++#include "ui/webui/webui_util.h"
++
++GripsExamUI::GripsExamUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui) {
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      Profile::FromWebUI(web_ui), chrome::kGripsExamHost);
++  source->SetSupportedScheme(chrome::kGripsScheme);
++  webui::SetupWebUIDataSource(source, kGripsResources,
++                              IDR_GRIPS_EXAM_HTML);
++
++  // The bootstrap is intentionally offline. OIDC and configuration requests
++  // will be brokered by the browser process in the next milestone so cookies
++  // and tokens are never exposed to WebUI JavaScript.
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc, "connect-src 'none';");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src grips://exam 'self';");
++}
++
++GripsExamUI::~GripsExamUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsExamUI)
+diff --git a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+@@ -0,0 +1,78 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include <string>
++
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/test/browser_test.h"
++#include "net/base/url_util.h"
++#include "url/gurl.h"
++
++namespace {
++
++class GripsUIBrowserTest : public InProcessBrowserTest {
++ protected:
++  content::WebContents* web_contents() {
++    return browser()->tab_strip_model()->GetActiveWebContents();
++  }
++};
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, ExamHostUsesExamController) {
++  ASSERT_TRUE(
++      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kGripsExamUrl)));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsExamUI>());
++  EXPECT_EQ(u"BYOD Exam", web_contents()->GetTitle());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, PublicExamLinkIsRewritten) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(),
++      GURL("grips://exam.cs.ac.cn/course-101?attempt=first")));
++
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_TRUE(committed.SchemeIs(chrome::kGripsScheme));
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++
++  std::string target;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "target", &target));
++  EXPECT_EQ("https://exam.cs.ac.cn/course-101?attempt=first", target);
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, BareExamOriginOpensCodeEntry) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://exam.cs.ac.cn")));
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++  EXPECT_FALSE(committed.has_query());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, CompletionLinkStaysInExamWebUI) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://exam.cs.ac.cn/exams/course-101/complete")));
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++  std::string action;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "action", &action));
++  EXPECT_EQ("complete", action);
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, OldAgentServerRoutesAreGone) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("grips://login/")));
++
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++
++  std::string error;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "error", &error));
++  EXPECT_EQ("invalid_exam_link", error);
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, UntrustedExamHostIsRejected) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://exam.example.test/course-101")));
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++
++  std::string error;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "error", &error));
++  EXPECT_EQ("invalid_exam_link", error);
++}
++
++}  // namespace
+diff --git a/chrome/browser/resources/grips/BUILD.gn b/chrome/browser/resources/grips/BUILD.gn
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/BUILD.gn
+@@ -0,0 +1,17 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "grips"
++  static_files = [
++    "exam.html",
++    "grips.css",
++  ]
++  ts_files = [ "exam.ts" ]
++  ts_composite = true
++  ts_deps = [ "//ui/webui/resources/js:build_ts" ]
++  webui_context_type = "trusted"
++}
+diff --git a/chrome/browser/resources/grips/exam.html b/chrome/browser/resources/grips/exam.html
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/exam.html
+@@ -0,0 +1,35 @@
++<!doctype html>
++<html dir="ltr" lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>BYOD Exam</title>
++    <link rel="stylesheet" href="/grips.css">
++  </head>
++  <body>
++    <main class="exam-card">
++      <div class="header-row">
++        <div class="brand">BYOD Browser</div>
++        <span class="badge">Exam bootstrap</span>
++      </div>
++      <h1 id="title">Preparing exam session</h1>
++      <p id="message" class="muted">
++        The browser recognized this exam link. Authentication and signed
++        policy loading will be connected in the next development milestone.
++      </p>
++      <section id="target-section" class="target-panel" hidden>
++        <span class="label">Verified HTTPS target</span>
++        <code id="target"></code>
++      </section>
++      <section id="error" class="error" hidden>
++        This is not a trusted BYOD exam link. Use a link in the form
++        <code>grips://exam.cs.ac.cn/&lt;exam&gt;</code>.
++      </section>
++      <div class="status-row">
++        <span class="status-dot"></span>
++        <span id="status">Waiting for exam services</span>
++      </div>
++    </main>
++    <script type="module" src="/exam.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/exam.ts b/chrome/browser/resources/grips/exam.ts
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/exam.ts
+@@ -0,0 +1,44 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++const title = document.querySelector<HTMLElement>('#title')!;
++const message = document.querySelector<HTMLElement>('#message')!;
++const targetSection = document.querySelector<HTMLElement>('#target-section')!;
++const targetElement = document.querySelector<HTMLElement>('#target')!;
++const errorElement = document.querySelector<HTMLElement>('#error')!;
++const status = document.querySelector<HTMLElement>('#status')!;
++
++function showInvalidLink() {
++  title.textContent = 'Invalid exam link';
++  message.textContent =
++      'The browser did not start an exam session and remains in normal mode.';
++  errorElement.hidden = false;
++  targetSection.hidden = true;
++  status.textContent = 'No restrictions are active';
++}
++
++const params = new URLSearchParams(window.location.search);
++const target = params.get('target');
++if (params.has('error') || !target) {
++  showInvalidLink();
++} else {
++  try {
++    const parsed = new URL(target);
++    if (parsed.protocol !== 'https:' ||
++        parsed.hostname !== 'exam.cs.ac.cn' || parsed.port !== '' ||
++        parsed.pathname === '/') {
++      showInvalidLink();
++    } else {
++      title.textContent = 'Exam link recognized';
++      message.textContent =
++          'The browser is still in normal mode. No device restrictions have been applied.';
++      targetElement.textContent = parsed.href;
++      targetSection.hidden = false;
++      errorElement.hidden = true;
++      status.textContent = 'Ready for OIDC and signed policy integration';
++    }
++  } catch {
++    showInvalidLink();
++  }
++}
+diff --git a/chrome/browser/resources/grips/grips.css b/chrome/browser/resources/grips/grips.css
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/grips.css
+@@ -0,0 +1,128 @@
++:root {
++  color-scheme: light dark;
++  --background: light-dark(#f3f6fb, #0f141c);
++  --card: light-dark(#fff, #181f2a);
++  --foreground: light-dark(#172033, #eef3ff);
++  --muted: light-dark(#5f6b7e, #a7b2c4);
++  --border: light-dark(#d9e0eb, #344052);
++  --primary: #4c73ff;
++  --success: #21a366;
++  --error-bg: light-dark(#fff1f0, #421d20);
++  --error: light-dark(#a8071a, #ff9aa5);
++  font-family: system-ui, sans-serif;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  align-items: center;
++  background:
++      radial-gradient(circle at 15% 15%, rgb(76 115 255 / 14%), transparent 32%),
++      var(--background);
++  color: var(--foreground);
++  display: flex;
++  justify-content: center;
++  margin: 0;
++  min-height: 100vh;
++  padding: 32px;
++}
++
++.exam-card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 18px;
++  box-shadow: 0 24px 70px rgb(0 0 0 / 16%);
++  max-width: 680px;
++  padding: 36px;
++  width: 100%;
++}
++
++.header-row,
++.status-row {
++  align-items: center;
++  display: flex;
++}
++
++.header-row {
++  justify-content: space-between;
++}
++
++.brand {
++  font-size: 18px;
++  font-weight: 750;
++  letter-spacing: -.03em;
++}
++
++.badge {
++  background: rgb(76 115 255 / 12%);
++  border: 1px solid rgb(76 115 255 / 30%);
++  border-radius: 999px;
++  color: var(--primary);
++  font-size: 12px;
++  font-weight: 700;
++  padding: 5px 10px;
++  text-transform: uppercase;
++}
++
++h1 {
++  font-size: 30px;
++  margin: 42px 0 10px;
++}
++
++.muted {
++  color: var(--muted);
++  line-height: 1.6;
++  margin: 0;
++}
++
++.target-panel,
++.error {
++  border-radius: 10px;
++  margin-top: 26px;
++  padding: 16px;
++}
++
++.target-panel {
++  background: rgb(76 115 255 / 7%);
++  border: 1px solid rgb(76 115 255 / 25%);
++}
++
++.label {
++  color: var(--muted);
++  display: block;
++  font-size: 12px;
++  font-weight: 700;
++  margin-bottom: 8px;
++  text-transform: uppercase;
++}
++
++code {
++  font-family: ui-monospace, monospace;
++  overflow-wrap: anywhere;
++}
++
++.error {
++  background: var(--error-bg);
++  border: 1px solid color-mix(in srgb, var(--error), transparent 55%);
++  color: var(--error);
++}
++
++.status-row {
++  color: var(--muted);
++  font-size: 13px;
++  gap: 9px;
++  margin-top: 32px;
++}
++
++.status-dot {
++  background: var(--success);
++  border-radius: 50%;
++  height: 8px;
++  width: 8px;
++}
++
++[hidden] {
++  display: none !important;
++}

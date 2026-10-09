@@ -1,0 +1,11 @@
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -230,6 +230,8 @@
+   // grips: browser-owned bootstrap pages are packaged with the browser.
+   // Exam content itself continues to use HTTPS web origins.
+   schemes->secure_schemes.push_back(chrome::kGripsScheme);
++  // Persist the short-lived session token across the OIDC round trip.
++  url::AddWebStorageScheme(chrome::kGripsScheme);
+ 
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Treat extensions as secure because communication with them is entirely in

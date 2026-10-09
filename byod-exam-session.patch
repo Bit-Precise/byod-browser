@@ -1,0 +1,7 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+--- a/chrome/browser/ui/webui/grips/grips_ui.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -28,1 +28,2 @@
+-      network::mojom::CSPDirectiveName::ConnectSrc, "connect-src 'none';");
++      network::mojom::CSPDirectiveName::ConnectSrc,
++      "connect-src https://exam.cs.ac.cn http://127.0.0.1:8787;");

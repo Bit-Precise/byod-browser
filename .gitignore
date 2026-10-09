@@ -22,3 +22,13 @@ Thumbs.db
 
 # Superpowers SDD ledger (project-scoped scratch)
 /.superpowers/
+
+# Local packages, test captures, and the separately maintained middleware
+/dist/
+/artifacts/
+/byod_server/
+
+# Local credential-recovery utilities are not project source
+/find-codex-password-record.py
+/print-codex-password-line.py
+/reset-windows-password.py

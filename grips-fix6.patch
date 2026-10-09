@@ -1,0 +1,11 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_agentserver_client.cc b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+--- a/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
++++ b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+@@ -172,7 +172,7 @@ void AgentServerClient::OnRequestComplete(
+   }
+ 
+   if (body.has_value() && !body->empty()) {
+-    response.body = base::JSONReader::Read(*body);
++    response.body = base::JSONReader::Read(*body, base::JSON_PARSE_RFC);
+     if (!response.body.has_value()) {
+       if (response.http_status >= 200 && response.http_status < 300) {

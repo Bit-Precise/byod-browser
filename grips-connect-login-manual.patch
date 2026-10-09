@@ -1,0 +1,35 @@
+diff --git a/chrome/browser/resources/grips/login.ts b/chrome/browser/resources/grips/login.ts
+--- a/chrome/browser/resources/grips/login.ts
++++ b/chrome/browser/resources/grips/login.ts
+@@ -18,10 +18,13 @@ button?.addEventListener('click', openConnect);
+ // Match the browser's normal sign-in affordance: opening grips://login starts
+ // the Connect flow immediately, while leaving a button for blocked scripts or
+-// users who want to retry after a transient network failure.
+-window.setTimeout(() => {
+-  if (document.visibilityState === 'visible') {
+-    openConnect();
+-  }
+-}, 100);
++// users who want to retry after a transient network failure. The `manual`
++// query is used by browser tests to keep the WebUI document committed.
++if (!new URLSearchParams(window.location.search).has('manual')) {
++  window.setTimeout(() => {
++    if (document.visibilityState === 'visible') {
++      openConnect();
++    }
++  }, 100);
++}
+ 
+ if (status) {
+diff --git a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+--- a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+@@ -52,6 +52,7 @@ IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, PublicExamLinkIsRewritten) {
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, LoginHostUsesConnectController) {
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("grips://login/")));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://login/?manual=1")));
+ 
+   ASSERT_TRUE(web_contents()->GetWebUI());

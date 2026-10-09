@@ -1,0 +1,189 @@
+diff --git a/chrome/browser/resources/grips/exam.html b/chrome/browser/resources/grips/exam.html
+--- a/chrome/browser/resources/grips/exam.html
++++ b/chrome/browser/resources/grips/exam.html
+@@
+       <p id="message" class="muted">
+         The browser recognized this exam link. Authentication and signed
+         policy loading will be connected in the next development milestone.
+       </p>
++      <section id="entry-section" class="target-panel">
++        <span class="label">Exam code</span>
++        <div class="code-entry">
++          <input id="exam-code" inputmode="text" maxlength="8"
++                 placeholder="A1B2C3D4" aria-label="8-character exam code">
++          <button id="lookup" type="button">Continue</button>
++        </div>
++        <p id="entry-error" class="field-error" hidden></p>
++      </section>
+@@
+       <section id="target-section" class="target-panel" hidden>
+@@
+       </section>
++      <section id="schedule-section" class="target-panel" hidden>
++        <span class="label">Exam schedule</span>
++        <p id="schedule"></p>
++        <p id="countdown" class="countdown"></p>
++      </section>
+@@
+-        <button id="end" type="button" hidden>End exam</button>
++        <button id="end" type="button" hidden>Submit exam</button>
+diff --git a/chrome/browser/resources/grips/grips.css b/chrome/browser/resources/grips/grips.css
+--- a/chrome/browser/resources/grips/grips.css
++++ b/chrome/browser/resources/grips/grips.css
+@@
+ .target-panel {
+@@
+ }
++
++.code-entry { display: flex; gap: 10px; }
++.code-entry input {
++  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
++  color: var(--foreground); flex: 1; font: 700 20px ui-monospace, monospace;
++  letter-spacing: .18em; min-width: 0; padding: 10px 12px; text-transform: uppercase;
++}
++.field-error { color: var(--error); font-size: 13px; margin: 9px 0 0; }
++.countdown { font-size: 22px; font-weight: 700; margin: 8px 0 0; }
+diff --git a/chrome/browser/resources/grips/exam.ts b/chrome/browser/resources/grips/exam.ts
+--- a/chrome/browser/resources/grips/exam.ts
++++ b/chrome/browser/resources/grips/exam.ts
+@@
+ const end = document.querySelector<HTMLButtonElement>('#end')!;
++const entrySection = document.querySelector<HTMLElement>('#entry-section')!;
++const codeInput = document.querySelector<HTMLInputElement>('#exam-code')!;
++const lookup = document.querySelector<HTMLButtonElement>('#lookup')!;
++const entryError = document.querySelector<HTMLElement>('#entry-error')!;
++const scheduleSection = document.querySelector<HTMLElement>('#schedule-section')!;
++const scheduleElement = document.querySelector<HTMLElement>('#schedule')!;
++const countdownElement = document.querySelector<HTMLElement>('#countdown')!;
+@@
+ let heartbeatTimer: number | undefined;
++let countdownTimer: number | undefined;
++let startPollTimer: number | undefined;
++let currentConfig: ExamConfig | undefined;
++let currentSessionId = '';
++const storageExam = 'byod.exam_id';
++
++function clearExamTimers() {
++  if (heartbeatTimer !== undefined) window.clearInterval(heartbeatTimer);
++  if (countdownTimer !== undefined) window.clearInterval(countdownTimer);
++  if (startPollTimer !== undefined) window.clearInterval(startPollTimer);
++  heartbeatTimer = countdownTimer = startPollTimer = undefined;
++}
++
++function showCodeEntry() {
++  clearExamTimers();
++  entrySection.hidden = false; targetSection.hidden = true;
++  scheduleSection.hidden = true; errorElement.hidden = true;
++  launch.hidden = true; end.hidden = true;
++  title.textContent = 'Enter exam code';
++  message.textContent = 'Enter the eight-character code supplied by your instructor.';
++  status.textContent = 'Normal browser mode';
++  codeInput.focus();
++}
++
++function showCompleted(text: string) {
++  clearNativeTunnelConfig();
++  clearExamTimers();
++  localStorage.removeItem(storageToken); localStorage.removeItem(storageSession);
++  localStorage.removeItem(storageExam);
++  entrySection.hidden = true; targetSection.hidden = true;
++  scheduleSection.hidden = true; launch.hidden = true; end.hidden = true;
++  errorElement.hidden = false; title.textContent = 'Exam completed';
++  message.textContent = text; status.textContent = 'No exam restrictions are active';
++}
++
++function setSchedule(config: ExamConfig) {
++  const exam = config.exam as ExamConfig['exam'] & {starts_at?: string, ends_at?: string};
++  scheduleSection.hidden = false;
++  scheduleElement.textContent = `Starts: ${exam.starts_at || 'not set'} · Ends: ${exam.ends_at || 'not set'}`;
++  if (exam.ends_at) {
++    countdownTimer = window.setInterval(() => {
++      const remaining = new Date(exam.ends_at as string).getTime() - Date.now();
++      if (remaining <= 0) { void completeExam('timeout'); return; }
++      countdownElement.textContent = `Time remaining: ${Math.floor(remaining / 3600000)}h ${Math.floor(remaining / 60000) % 60}m ${Math.floor(remaining / 1000) % 60}s`;
++    }, 1000);
++  }
++}
++
++async function completeExam(reason: string) {
++  if (!currentConfig || !currentSessionId) return;
++  const token = localStorage.getItem(storageToken) || '';
++  const response = await fetch(new URL(`/v1/exams/${currentConfig.exam.id}/complete`, currentConfig.exam.origin), {
++    method: 'POST', headers: {'Authorization': `Bearer ${token}`}, credentials: 'include',
++    body: JSON.stringify({reason}),
++  });
++  if (response.ok || response.status === 410) showCompleted(reason === 'manual' ? 'Exam submitted. This student cannot enter it again.' : 'The exam end time was reached. This student cannot enter it again.');
++}
+@@
+ function showInvalidLink(text = 'The browser did not start an exam session and remains in normal mode.') {
++  clearExamTimers();
+@@
+   end.hidden = true;
++  entrySection.hidden = true;
+@@
+ function showReady(target: URL, config: ExamConfig, sessionId: string) {
++  currentConfig = config; currentSessionId = sessionId;
++  localStorage.setItem(storageExam, config.exam.id);
++  setSchedule(config);
++  entrySection.hidden = true;
+@@
+   end.onclick = async () => {
+-    const token = localStorage.getItem(storageToken) || '';
+-    await fetch(new URL(`/v1/sessions/${sessionId}/end`, config.exam.origin), {
+-      method: 'POST', headers: {'Authorization': `Bearer ${token}`},
+-    });
+-    localStorage.removeItem(storageToken);
+-    localStorage.removeItem(storageSession);
+-    showInvalidLink('The exam session ended and browser restrictions are cleared.');
++    await completeExam('manual');
+   };
+ }
+@@
+   if (state.state === 'authenticated') {
+@@
+-    if (!startResponse.ok) throw new Error('exam start rejected');
++    if (startResponse.status === 409) {
++      title.textContent = 'Exam session authenticated';
++      message.textContent = 'Identity verified. Waiting for the scheduled start time.';
++      entrySection.hidden = true; targetSection.hidden = false; end.hidden = false;
++      setSchedule(config);
++      startPollTimer = window.setInterval(async () => {
++        const retry = await fetch(new URL(`/v1/sessions/${existingSession}/start`, config.exam.origin), {method: 'POST', headers: {'Authorization': `Bearer ${existingToken}`}});
++        if (retry.ok) { clearExamTimers(); showReady(target, config, existingSession); }
++        else if (retry.status === 410) showCompleted('The exam has ended. This student cannot enter it again.');
++      }, 2000);
++      return;
++    }
++    if (!startResponse.ok) throw new Error('exam start rejected');
+  }
+  showReady(target, config, existingSession);
+ }
+
++async function resolveExamCode() {
++  const code = codeInput.value.trim().toUpperCase();
++  if (!/^[0-9A-Z]{8}$/.test(code)) { entryError.textContent = 'Exam code must contain exactly 8 letters or digits.'; entryError.hidden = false; return; }
++  lookup.disabled = true;
++  try {
++    const response = await fetch(new URL('/v1/exam-entry', 'https://exam.cs.ac.cn'), {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'include', body: JSON.stringify({exam_code: code})});
++    if (response.status === 410) { showCompleted('This exam has ended or this student has already completed it.'); return; }
++    if (!response.ok) { entryError.textContent = response.status === 404 ? 'Exam code not found.' : 'Exam is not published.'; entryError.hidden = false; return; }
++    const entry = await response.json();
++    const target = new URL(`https://exam.cs.ac.cn/${entry.exam_id}`);
++    const url = new URL(window.location.href); url.searchParams.set('target', target.href); window.history.replaceState({}, '', url);
++    await bootstrap(target);
++  } finally { lookup.disabled = false; }
++}
+@@
+ const targetValue = new URLSearchParams(window.location.search).get('target');
++lookup.onclick = () => void resolveExamCode();
++codeInput.onkeydown = event => { if (event.key === 'Enter') void resolveExamCode(); };
++if (new URLSearchParams(window.location.search).get('action') === 'complete') {
++  currentSessionId = localStorage.getItem(storageSession) || '';
++  const id = new URLSearchParams(window.location.search).get('exam_id') || localStorage.getItem(storageExam) || '';
++  currentConfig = {exam: {id, origin: 'https://exam.cs.ac.cn', proxy_origin: 'https://exam.cs.ac.cn', unlock_path: ''}, oidc: {authorization_endpoint: ''}, policy: {alg: '', key_id: '', document: {}, signature: ''}};
++  void completeExam('manual');
++} else
+ if (!targetValue || new URLSearchParams(window.location.search).has('error')) {
+-  showInvalidLink();
++  showCodeEntry();
+ } else {

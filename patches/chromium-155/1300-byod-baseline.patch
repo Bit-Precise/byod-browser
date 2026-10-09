@@ -1,0 +1,4070 @@
+diff --git a/chrome/app/shared_settings_strings.grdp b/chrome/app/shared_settings_strings.grdp
+index 35ef542fa88ef..0087c64ffc366 100644
+--- a/chrome/app/shared_settings_strings.grdp
++++ b/chrome/app/shared_settings_strings.grdp
+@@ -261,6 +261,12 @@
+   <message name="IDS_SETTINGS_PEOPLE_SIGN_IN_PROMPT" desc="The text displayed to prompt users to sign in to chrome.">
+     Get Google smarts in Chrome
+   </message>
++  <message name="IDS_SETTINGS_BYOD_CONNECT_SIGN_IN" desc="Label for the button that opens the BYOD Connect sign-in page from Chrome settings.">
++    Sign in with Connect
++  </message>
++  <message name="IDS_SETTINGS_BYOD_CONNECT_SIGN_IN_DESCRIPTION" desc="Description shown next to the BYOD Connect sign-in button in Chrome settings.">
++    Use your Connect account for BYOD exams
++  </message>
+   <message name="IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF" desc="The label for the button that lets the user turn off profile syncing with their gaia account.">
+     Turn off
+   </message>
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index b58905ddb371f..ece9bb5e5de4a 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1084,6 +1084,7 @@ source_set("core") {
+     "//chrome/browser/ui/webui/engagement",
+     "//chrome/browser/ui/webui/internal_debug_pages_disabled",
+     "//chrome/browser/ui/webui/location_internals",
++    "//chrome/browser/ui/webui/grips",
+     "//chrome/browser/ui/webui/media",
+     "//chrome/browser/ui/webui/omnibox",
+     "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",
+diff --git a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
+index d6157f3eac8d8..2b85638980878 100644
+--- a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
++++ b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier_unittest.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+ 
+ #include "base/strings/utf_string_conversions.h"
++#include "chrome/common/url_constants.h"
+ #include "chrome/test/base/testing_profile.h"
+ #include "content/public/test/fake_service_worker_context.h"
+ #include "content/public/test/test_storage_partition.h"
+@@ -59,5 +60,10 @@ TEST_F(ChromeAutocompleteSchemeClassifierTest, DevToolsUrl) {
+             metrics::OmniboxInputType::URL);
+ }
+ 
++TEST_F(ChromeAutocompleteSchemeClassifierTest, GripsUrl) {
++  EXPECT_EQ(scheme_classifier_->GetInputTypeForScheme(chrome::kGripsScheme),
++            metrics::OmniboxInputType::URL);
++}
++
+ // Can't test registered apps handling with mocking of shell_integration
+ // because shell_integration is implemented via namespace shell_integration.
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 19045777b3d81..9bae4ae21ebe7 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -208,6 +208,7 @@
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/webid/identity_dialog_controller.h"
+ #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
++#include "chrome/browser/ui/webui/grips/grips_url_handler.h"
+ #include "chrome/browser/ui/webui/internal_debug_pages_disabled/internal_debug_pages_disabled_ui.h"
+ #include "chrome/browser/ui/webui/log_web_ui_url.h"
+ #include "chrome/browser/universal_web_contents_observers.h"
+@@ -2220,6 +2221,7 @@ void ChromeContentBrowserClient::GetAdditionalWebUISchemes(
+   additional_schemes->emplace_back(chrome::kChromeSearchScheme);
+   additional_schemes->emplace_back(dom_distiller::kDomDistillerScheme);
+   additional_schemes->emplace_back(content::kChromeDevToolsScheme);
++  additional_schemes->emplace_back(chrome::kGripsScheme);
+ }
+ 
+ bool ChromeContentBrowserClient::IsInternalScheme(const GURL& url) {
+@@ -5032,6 +5034,9 @@ bool ChromeContentBrowserClient::
+ 
+ void ChromeContentBrowserClient::BrowserURLHandlerCreated(
+     BrowserURLHandler* handler) {
++  handler->AddHandlerPair(&grips::HandleGripsExamURL,
++                          BrowserURLHandler::null_handler());
++
+   // The group policy NTP URL handler must be registered before the other NTP
+   // URL handlers below. Also register it before the "parts" handlers, so the
+   // NTP policy takes precedence over extensions that override the NTP.
+diff --git a/chrome/browser/extensions/BUILD.gn b/chrome/browser/extensions/BUILD.gn
+index 563383fc71d7b..777ad3a710b93 100644
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -2648,6 +2648,7 @@ source_set("browser_tests") {
+       "//chrome/browser/ui/search:test_support_ui",
+       "//chrome/browser/ui/tabs/saved_tab_groups",
+       "//chrome/browser/ui/views/location_bar",
++      "//chrome/browser/ui/webui/grips:browser_tests",
+       "//chrome/browser/ui/webui/history_clusters:browser_tests",
+       "//chrome/browser/ui/webui/interstitials:browser_tests",
+       "//chrome/browser/ui/webui/location_internals:browser_tests",
+diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
+index 67be696b30045..0d6599fdfc270 100644
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -1479,6 +1479,15 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+ 
+   proxy_config_monitor_->AddToNetworkContextParams(network_context_params);
+ 
++  // Keep the network service's custom-proxy delegate available for the
++  // browser-owned BYOD exam tunnel. Its rules are empty by default, so this
++  // has no effect on ordinary browsing; grips://exam updates the delegate
++  // through NetworkContext::SetByodTunnelConfig when a session becomes active.
++  if (!network_context_params->initial_custom_proxy_config) {
++    network_context_params->initial_custom_proxy_config =
++        network::mojom::CustomProxyConfig::New();
++  }
++
+   network_context_params->enable_certificate_reporting = true;
+ 
+   SCTReportingService* sct_reporting_service =
+diff --git a/chrome/browser/profiles/profile_io_data.cc b/chrome/browser/profiles/profile_io_data.cc
+index 080e9b0e43c70..6d4b48f28c151 100644
+--- a/chrome/browser/profiles/profile_io_data.cc
++++ b/chrome/browser/profiles/profile_io_data.cc
+@@ -55,6 +55,7 @@ bool ProfileIOData::IsHandledProtocol(std::string_view scheme) {
+       url::kAboutScheme,
+       url::kBlobScheme,
+       url::kFileSystemScheme,
++      chrome::kGripsScheme,
+       chrome::kChromeSearchScheme,
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+     BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/resources/grips/BUILD.gn b/chrome/browser/resources/grips/BUILD.gn
+new file mode 100644
+index 0000000000000..efa65a789e0f4
+--- /dev/null
++++ b/chrome/browser/resources/grips/BUILD.gn
+@@ -0,0 +1,24 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "grips"
++  # Only the narrow native-control bridge remains in Chromium. The student
++  # UI is served dynamically by byod-server over HTTPS.
++  static_files = [
++    "bridge.html",
++    "bridge.css",
++    "login.html",
++  ]
++  # Keep only the small legacy login helper; the exam UI itself is never
++  # compiled into Chromium and is fetched from https://exam.cs.ac.cn.
++  ts_files = [
++    "bridge.ts",
++    "login.ts",
++  ]
++  ts_composite = true
++  ts_deps = [ "//ui/webui/resources/js:build_ts" ]
++}
+diff --git a/chrome/browser/resources/grips/bridge.css b/chrome/browser/resources/grips/bridge.css
+new file mode 100644
+index 0000000000000..fef374bf597f3
+--- /dev/null
++++ b/chrome/browser/resources/grips/bridge.css
+@@ -0,0 +1,45 @@
++html,
++body,
++iframe {
++  width: 100%;
++  height: 100%;
++  margin: 0;
++  border: 0;
++  overflow: hidden;
++}
++
++body {
++  background: #f3f6fb;
++}
++
++#bridge-loading {
++  align-items: center;
++  color: #52627a;
++  display: flex;
++  flex-direction: column;
++  font: 15px system-ui, sans-serif;
++  gap: 12px;
++  inset: 0;
++  justify-content: center;
++  position: fixed;
++  z-index: 1;
++}
++
++.bridge-spinner {
++  animation: bridge-spin 800ms linear infinite;
++  border: 3px solid #d7e0ef;
++  border-radius: 50%;
++  border-top-color: #4c73ff;
++  height: 28px;
++  width: 28px;
++}
++
++@keyframes bridge-spin {
++  to { transform: rotate(360deg); }
++}
++
++#exam-app {
++  background: transparent;
++  position: relative;
++  z-index: 2;
++}
+diff --git a/chrome/browser/resources/grips/bridge.html b/chrome/browser/resources/grips/bridge.html
+new file mode 100644
+index 0000000000000..5eb8ef45aaf06
+--- /dev/null
++++ b/chrome/browser/resources/grips/bridge.html
+@@ -0,0 +1,18 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>BYOD Exam</title>
++    <link rel="preconnect" href="https://exam.cs.ac.cn" crossorigin>
++    <link rel="stylesheet" href="bridge.css">
++  </head>
++  <body>
++    <div id="bridge-loading" role="status" aria-live="polite">
++      <div class="bridge-spinner" aria-hidden="true"></div>
++      <div>正在连接考试服务…</div>
++    </div>
++    <iframe id="exam-app" title="BYOD exam service"></iframe>
++    <script type="module" src="bridge.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/bridge.ts b/chrome/browser/resources/grips/bridge.ts
+new file mode 100644
+index 0000000000000..4e517aab7a641
+--- /dev/null
++++ b/chrome/browser/resources/grips/bridge.ts
+@@ -0,0 +1,52 @@
++(() => {
++  'use strict';
++
++  const examOrigin = 'https://exam.cs.ac.cn';
++  const allowedMessages = new Set([
++    'setByodTunnelConfig',
++    'clearByodTunnelConfig',
++    'setByodFullscreen',
++  ]);
++  const frame = document.getElementById('exam-app');
++  const loading = document.getElementById('bridge-loading');
++  if (!(frame instanceof HTMLIFrameElement)) {
++    return;
++  }
++
++  const topURL = new URL(window.location.href);
++  const remoteURL = new URL(examOrigin);
++  remoteURL.pathname = topURL.pathname || '/';
++  remoteURL.search = topURL.search;
++  remoteURL.hash = topURL.hash;
++  frame.src = remoteURL.href;
++
++  window.addEventListener('message', (event) => {
++    if (event.source !== frame.contentWindow || event.origin !== examOrigin) {
++      return;
++    }
++    const message = event.data;
++    if (message?.channel === 'byod-browser' && message.type === 'ready') {
++      frame.contentWindow?.postMessage(
++          {channel: 'byod-browser', type: 'ready'}, examOrigin);
++      return;
++    }
++    if (!message || message.channel !== 'byod-browser' ||
++        !allowedMessages.has(message.name)) {
++      return;
++    }
++    const chromeApi = (window as Window & {
++      chrome?: {send?: (name: string, args: unknown[]) => void},
++    }).chrome;
++    if (chromeApi && typeof chromeApi.send === 'function') {
++      chromeApi.send(message.name, message.args || []);
++    }
++  });
++
++  frame.addEventListener('load', () => {
++    if (loading instanceof HTMLElement) {
++      loading.hidden = true;
++    }
++    frame.contentWindow?.postMessage(
++        {channel: 'byod-browser', type: 'ready'}, examOrigin);
++  });
++})();
+diff --git a/chrome/browser/resources/grips/exam.html b/chrome/browser/resources/grips/exam.html
+new file mode 100644
+index 0000000000000..94d51ba89fffe
+--- /dev/null
++++ b/chrome/browser/resources/grips/exam.html
+@@ -0,0 +1,49 @@
++<!doctype html>
++<html dir="ltr" lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>BYOD Exam</title>
++    <link rel="stylesheet" href="/grips.css">
++  </head>
++  <body>
++    <main class="exam-card">
++      <div class="header-row">
++        <div class="brand">BYOD Browser</div>
++        <span class="badge">Exam bootstrap</span>
++      </div>
++      <h1 id="title">Preparing exam session</h1>
++      <p id="message" class="muted">
++        Sign in with Connect to see the exams assigned to you.
++      </p>
++      <section id="entry-section" class="target-panel">
++        <span class="label">Student sign-in</span>
++        <button id="login" type="button">Sign in with Connect</button>
++        <div id="exam-list" class="exam-list" hidden></div>
++        <p id="entry-error" class="field-error" hidden></p>
++      </section>
++      <section id="target-section" class="target-panel" hidden>
++        <span class="label">Verified HTTPS target</span>
++        <code id="target"></code>
++      </section>
++      <section id="schedule-section" class="target-panel" hidden>
++        <span class="label">Exam schedule</span>
++        <p id="schedule"></p>
++        <p id="countdown" class="countdown"></p>
++      </section>
++      <section id="error" class="error" hidden>
++        Open <code>grips://exam/</code> and sign in with Connect to choose an
++        exam assigned to your account.
++      </section>
++      <div class="actions">
++        <button id="launch" type="button" hidden>Open exam</button>
++        <button id="end" type="button" hidden>Submit exam</button>
++      </div>
++      <div class="status-row">
++        <span class="status-dot"></span>
++        <span id="status">Waiting for exam services</span>
++      </div>
++    </main>
++    <script type="module" src="/exam.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/exam.ts b/chrome/browser/resources/grips/exam.ts
+new file mode 100644
+index 0000000000000..01e1c4f392f8f
+--- /dev/null
++++ b/chrome/browser/resources/grips/exam.ts
+@@ -0,0 +1,708 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++export {};
++
++type ExamConfig = {
++  exam: {
++    id: string;
++    origin: string;
++    source_origin?: string;
++    source_host?: string;
++    proxy_origin: string;
++    unlock_path: string;
++    state?: string;
++    starts_at?: string | null;
++    ends_at?: string | null;
++  };
++  oidc: {authorization_endpoint: string};
++  policy: {
++    alg: string;
++    key_id: string;
++    document: {
++      exam_id?: string;
++      allowed_origins?: string[];
++      navigation?: {allowed_origins?: string[]};
++      browser?: {require_fullscreen?: boolean; lock_fullscreen?: boolean};
++      session?: {heartbeat_seconds?: number};
++    };
++    signature: string;
++  };
++  tunnel?: {
++    endpoint?: string;
++    endpoint_id?: string;
++    ticket_path?: string;
++  };
++};
++
++type AvailableExam = {
++  id: string;
++  base_url: string;
++  state: string;
++  starts_at?: string | null;
++  ends_at?: string | null;
++  completed: boolean;
++};
++
++const serviceOrigin = 'https://exam.cs.ac.cn';
++const storageToken = 'byod.browser_token';
++const storageSession = 'byod.session_id';
++const storageExam = 'byod.exam_id';
++
++const title = document.querySelector<HTMLElement>('#title')!;
++const message = document.querySelector<HTMLElement>('#message')!;
++const entrySection = document.querySelector<HTMLElement>('#entry-section')!;
++const entryError = document.querySelector<HTMLElement>('#entry-error')!;
++const targetSection = document.querySelector<HTMLElement>('#target-section')!;
++const targetElement = document.querySelector<HTMLElement>('#target')!;
++const scheduleSection = document.querySelector<HTMLElement>('#schedule-section')!;
++const scheduleElement = document.querySelector<HTMLElement>('#schedule')!;
++const countdownElement = document.querySelector<HTMLElement>('#countdown')!;
++const errorElement = document.querySelector<HTMLElement>('#error')!;
++const status = document.querySelector<HTMLElement>('#status')!;
++const launch = document.querySelector<HTMLButtonElement>('#launch')!;
++const end = document.querySelector<HTMLButtonElement>('#end')!;
++const login = document.querySelector<HTMLButtonElement>('#login')!;
++const examList = document.querySelector<HTMLElement>('#exam-list')!;
++
++let heartbeatTimer: number | undefined;
++let countdownTimer: number | undefined;
++let startPollTimer: number | undefined;
++let currentConfig: ExamConfig | undefined;
++let currentSessionID = '';
++
++class SessionUnauthorizedError extends Error {
++  constructor() {
++    super('exam session unauthorized');
++    this.name = 'SessionUnauthorizedError';
++  }
++}
++
++function clearNativeExamState() {
++  const bridge = (window as unknown as {chrome?: {send?: (name: string, args?: unknown[]) => void}}).chrome;
++  if (bridge?.send) {
++    bridge.send('clearByodTunnelConfig');
++    bridge.send('setByodFullscreen', [false]);
++  }
++}
++
++type NativeChromeBridge = {send?: (name: string, args?: unknown[]) => void};
++
++function nativeChromeBridge(): NativeChromeBridge | undefined {
++  return (window as unknown as {chrome?: NativeChromeBridge}).chrome;
++}
++
++function setNativeFullscreen(required: boolean, locked: boolean) {
++  const bridge = nativeChromeBridge();
++  if (!bridge?.send) {
++    if (required) throw new Error('BYOD fullscreen control is unavailable');
++    return;
++  }
++  bridge.send('setByodFullscreen', [required, required && locked]);
++}
++
++function sourceOrigin(config: ExamConfig): URL {
++  const value = config.exam.source_origin;
++  if (!value) throw new Error('exam source origin is missing');
++  const result = new URL(value);
++  if (result.protocol !== 'https:' || !result.hostname || result.username ||
++      result.password || result.pathname !== '/' && result.pathname !== '') {
++    throw new Error('exam source origin is invalid');
++  }
++  return result;
++}
++
++function endpointAddress(config: ExamConfig): {host: string; port: number} {
++  const value = config.tunnel?.endpoint;
++  if (!value) throw new Error('exam tunnel endpoint is missing');
++  const endpoint = new URL(value.includes('://') ? value : `http://${value}`);
++  const port = Number(endpoint.port || 8788);
++  if (!endpoint.hostname || !Number.isInteger(port) || port < 1 || port > 65535)
++    throw new Error('exam tunnel endpoint is invalid');
++  return {host: endpoint.hostname, port};
++}
++
++function bytes(text: string): Uint8Array {
++  return new TextEncoder().encode(text);
++}
++
++async function tunnelProof(ticket: string, endpointID: string,
++                           nonce: Uint8Array): Promise<Uint8Array> {
++  const key = await crypto.subtle.importKey(
++      'raw', bytes(ticket) as unknown as BufferSource,
++      {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
++  const prefix = new Uint8Array(bytes('BYOD').length + 1 + bytes(endpointID).length + nonce.length);
++  prefix.set(bytes('BYOD'), 0);
++  prefix[4] = 1;
++  prefix.set(bytes(endpointID), 5);
++  prefix.set(nonce, 5 + bytes(endpointID).length);
++  return new Uint8Array(await crypto.subtle.sign(
++      'HMAC', key, prefix as unknown as BufferSource));
++}
++
++function allowedOrigins(config: ExamConfig): string[] {
++  const document = config.policy.document || {};
++  const result = new Set<string>(document.allowed_origins || []);
++  for (const origin of document.navigation?.allowed_origins || []) result.add(origin);
++  return [...result].filter((origin) => /^https?:\/\/[^/?#]+$/.test(origin));
++}
++
++async function activateTunnel(config: ExamConfig, sessionID: string,
++                              token: string): Promise<void> {
++  const path = config.tunnel?.ticket_path?.replace('{session_id}', encodeURIComponent(sessionID)) ||
++      `/v1/sessions/${encodeURIComponent(sessionID)}/tunnel-ticket`;
++  const response = await fetch(new URL(path, serviceOrigin), {
++    method: 'POST', credentials: 'include',
++    headers: {'Authorization': `Bearer ${token}`},
++  });
++  if (response.status === 401) throw new SessionUnauthorizedError();
++  if (!response.ok) throw new Error(`exam tunnel ticket rejected (${response.status})`);
++  const ticket = await response.json() as {ticket: string; endpoint_id: string};
++  if (!ticket.ticket || !ticket.endpoint_id) throw new Error('exam tunnel ticket is incomplete');
++  const nonce = new Uint8Array(16);
++  crypto.getRandomValues(nonce);
++  const proof = await tunnelProof(ticket.ticket, ticket.endpoint_id, nonce);
++  const endpoint = endpointAddress(config);
++  const bridge = nativeChromeBridge();
++  if (!bridge?.send) throw new Error('BYOD network control is unavailable');
++  bridge.send('setByodTunnelConfig', [{
++    sourceHost: config.exam.source_host || sourceOrigin(config).hostname,
++    proxyHost: endpoint.host,
++    proxyPort: endpoint.port,
++    endpointId: ticket.endpoint_id,
++    ticket: ticket.ticket,
++    nonce: [...nonce],
++    proof: [...proof],
++    allowedOrigins: allowedOrigins(config),
++    // The source page replaces this grips:// document, so the browser-side
++    // countdown cannot remain responsible for ending the exam. Pass the
++    // server's deadline to the native observer, which keeps enforcing the
++    // policy after the source navigation and clears it at ends_at.
++    examEndsAtMs: config.exam.ends_at ? Date.parse(config.exam.ends_at) : 0,
++  }]);
++  const browser = config.policy.document?.browser;
++  setNativeFullscreen(browser?.require_fullscreen === true,
++                      browser?.lock_fullscreen === true);
++}
++
++function clearTimers() {
++  if (heartbeatTimer !== undefined) window.clearInterval(heartbeatTimer);
++  if (countdownTimer !== undefined) window.clearInterval(countdownTimer);
++  if (startPollTimer !== undefined) window.clearInterval(startPollTimer);
++  heartbeatTimer = undefined;
++  countdownTimer = undefined;
++  startPollTimer = undefined;
++}
++
++function clearLocalSession() {
++  localStorage.removeItem(storageToken);
++  localStorage.removeItem(storageSession);
++  localStorage.removeItem(storageExam);
++  currentSessionID = '';
++}
++
++function showEntry() {
++  clearTimers();
++  clearNativeExamState();
++  title.textContent = 'Sign in to BYOD exams';
++  message.textContent = 'Sign in with Connect to see the exams assigned to you.';
++  entrySection.hidden = false;
++  targetSection.hidden = true;
++  scheduleSection.hidden = true;
++  errorElement.hidden = true;
++  launch.hidden = true;
++  end.hidden = true;
++  status.textContent = 'Normal browser mode';
++  entryError.hidden = true;
++  login.hidden = false;
++  login.textContent = 'Sign in with Connect';
++  examList.hidden = true;
++  examList.replaceChildren();
++}
++
++function returnToEntry(messageText = 'The exam session expired. Sign in with Connect again to choose an exam.') {
++  clearLocalSession();
++  const url = new URL(window.location.href);
++  url.search = '';
++  window.history.replaceState({}, '', url.toString());
++  showEntry();
++  entryError.textContent = messageText;
++  entryError.hidden = false;
++}
++
++function showInvalidLink(text = 'The browser did not start an exam session and remains in normal mode.') {
++  clearTimers();
++  clearNativeExamState();
++  title.textContent = 'Exam unavailable';
++  message.textContent = text;
++  entrySection.hidden = true;
++  targetSection.hidden = true;
++  scheduleSection.hidden = true;
++  errorElement.hidden = false;
++  launch.hidden = true;
++  end.hidden = true;
++  status.textContent = 'No exam restrictions are active';
++  login.hidden = true;
++  examList.hidden = true;
++}
++
++function showEnded(text = 'The exam is complete. This student cannot enter it again.') {
++  clearLocalSession();
++  showInvalidLink(text);
++  title.textContent = 'Exam completed';
++}
++
++function examId(target: URL): string {
++  return target.pathname.split('/').filter(Boolean)[0] || '';
++}
++
++function configURL(target: URL): URL {
++  const url = new URL(target.origin);
++  url.pathname = target.pathname.replace(/\/$/, '') + '/.well-known/byod-configuration';
++  return url;
++}
++
++function returnURI(): string {
++  const url = new URL(window.location.href);
++  url.searchParams.delete('session_id');
++  return url.toString();
++}
++
++function formatTime(value?: string | null): string {
++  if (!value) return 'not set';
++  const date = new Date(value);
++  return Number.isNaN(date.getTime()) ? 'not set' : date.toLocaleString();
++}
++
++function updateCountdown(deadline: string | null | undefined, prefix: string) {
++  if (!deadline) {
++    countdownElement.textContent = '';
++    return;
++  }
++  const remaining = new Date(deadline).getTime() - Date.now();
++  if (remaining <= 0) {
++    countdownElement.textContent = prefix === 'Starts in' ? 'Starting…' : 'Time is up';
++    return;
++  }
++  const totalSeconds = Math.floor(remaining / 1000);
++  const hours = Math.floor(totalSeconds / 3600);
++  const minutes = Math.floor((totalSeconds % 3600) / 60);
++  const seconds = totalSeconds % 60;
++  countdownElement.textContent = `${prefix} ${hours}h ${minutes}m ${seconds}s`;
++}
++
++async function completeCurrent(reason = 'manual'): Promise<boolean> {
++  const config = currentConfig;
++  if (!config || !currentSessionID) return false;
++  const token = localStorage.getItem(storageToken) || '';
++  try {
++    const response = await fetch(new URL(`/v1/exams/${config.exam.id}/complete`, serviceOrigin), {
++      method: 'POST',
++      credentials: 'include',
++      headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
++      body: JSON.stringify({reason}),
++    });
++    if (response.status === 401) {
++      returnToEntry();
++      return false;
++    }
++    if (!response.ok && response.status !== 410) return false;
++  } catch {
++    return false;
++  }
++  showEnded(reason === 'manual' ? 'Exam submitted. This student cannot enter it again.' :
++      'The exam end time was reached. This student cannot enter it again.');
++  return true;
++}
++
++async function reportViolation(examOrigin: string, sessionId: string,
++                               token: string, type: string) {
++  if (!sessionId || !token) return;
++  await fetch(new URL(`/v1/sessions/${sessionId}/violations`, examOrigin), {
++    method: 'POST', credentials: 'include',
++    headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
++    body: JSON.stringify({type}),
++  });
++}
++
++function showWaiting(target: URL, config: ExamConfig, sessionID: string) {
++  title.textContent = 'Exam session authenticated';
++  message.textContent = 'Identity verified. The exam will unlock at the scheduled start time.';
++  targetElement.textContent = target.href;
++  targetSection.hidden = false;
++  scheduleSection.hidden = false;
++  scheduleElement.textContent = `Starts: ${formatTime(config.exam.starts_at)} · Ends: ${formatTime(config.exam.ends_at)}`;
++  entrySection.hidden = true;
++  errorElement.hidden = true;
++  launch.hidden = true;
++  end.hidden = true;
++  status.textContent = `Authenticated session ${sessionID.slice(0, 8)}`;
++  updateCountdown(config.exam.starts_at, 'Starts in');
++  countdownTimer = window.setInterval(() => updateCountdown(config.exam.starts_at, 'Starts in'), 1000);
++  startPollTimer = window.setInterval(() => {
++    if (!config.exam.starts_at || Date.parse(config.exam.starts_at) <= Date.now()) {
++      showConfirm(target, config, sessionID);
++    }
++  }, 1000);
++}
++
++function showConfirm(target: URL, config: ExamConfig, sessionID: string) {
++  clearTimers();
++  title.textContent = 'Ready to enter the exam';
++  message.textContent = 'The exam is open. Confirm to start your attempt and enter the exam.';
++  targetElement.textContent = target.href;
++  targetSection.hidden = false;
++  scheduleSection.hidden = false;
++  scheduleElement.textContent = `Ends: ${formatTime(config.exam.ends_at)}`;
++  entrySection.hidden = true;
++  errorElement.hidden = true;
++  launch.hidden = false;
++  launch.textContent = 'Confirm and enter exam';
++  end.hidden = true;
++  status.textContent = `Authenticated session ${sessionID.slice(0, 8)}`;
++  currentConfig = config;
++  currentSessionID = sessionID;
++  launch.onclick = () => void startExam(target, config, sessionID);
++}
++
++function showReady(target: URL, config: ExamConfig, sessionID: string) {
++  clearTimers();
++  title.textContent = 'Exam in progress';
++  message.textContent = 'The signed exam policy is active. Submit when you finish.';
++  targetElement.textContent = target.href;
++  targetSection.hidden = false;
++  scheduleSection.hidden = false;
++  scheduleElement.textContent = `Ends: ${formatTime(config.exam.ends_at)}`;
++  entrySection.hidden = true;
++  errorElement.hidden = true;
++  launch.hidden = false;
++  launch.textContent = 'Open exam';
++  end.hidden = false;
++  status.textContent = `Active session ${sessionID.slice(0, 8)}`;
++  currentConfig = config;
++  currentSessionID = sessionID;
++  const token = localStorage.getItem(storageToken) || '';
++  const configuredHeartbeat = config.policy.document?.session?.heartbeat_seconds ?? 15;
++  const heartbeatMs = Math.max(5000, Math.min(300000, configuredHeartbeat * 1000));
++  heartbeatTimer = window.setInterval(async () => {
++    try {
++      const response = await fetch(new URL(`/v1/sessions/${sessionID}/heartbeat`, serviceOrigin), {
++        method: 'POST', credentials: 'include',
++        headers: {'Authorization': `Bearer ${token}`},
++      });
++      if (response.status === 410) {
++        showEnded('The exam end time was reached. This student cannot enter it again.');
++        return;
++      }
++      if (response.status === 401) {
++        returnToEntry();
++        return;
++      }
++      if (!response.ok) throw new Error('heartbeat rejected');
++      const state = await response.json();
++      if (state.state === 'suspended') {
++        showInvalidLink('The exam session was suspended. Contact the proctor.');
++      }
++    } catch {
++      status.textContent = 'Exam service heartbeat failed';
++    }
++  }, heartbeatMs);
++  if (config.exam.ends_at) {
++    countdownTimer = window.setInterval(() => {
++      updateCountdown(config.exam.ends_at, 'Time remaining');
++      if (new Date(config.exam.ends_at as string).getTime() <= Date.now()) {
++        void completeCurrent('timeout');
++      }
++    }, 1000);
++    updateCountdown(config.exam.ends_at, 'Time remaining');
++  }
++  launch.onclick = () => {
++    const destination = sourceOrigin(config);
++    const targetURL = new URL(target.href);
++    destination.pathname = targetURL.pathname;
++    destination.search = targetURL.search;
++    window.location.href = destination.href;
++  };
++  end.onclick = () => void completeCurrent('manual');
++}
++
++async function startExam(target: URL, config: ExamConfig, sessionID: string) {
++  const token = localStorage.getItem(storageToken) || '';
++  try {
++    const response = await fetch(new URL(`/v1/sessions/${sessionID}/start`, serviceOrigin), {
++      method: 'POST', credentials: 'include',
++      headers: {'Authorization': `Bearer ${token}`},
++    });
++    if (response.status === 401) throw new SessionUnauthorizedError();
++    if (response.ok) {
++      await activateTunnel(config, sessionID, token);
++      showReady(target, config, sessionID);
++      return;
++    }
++    if (response.status === 409) {
++      showWaiting(target, config, sessionID);
++      return;
++    }
++    if (response.status === 410) {
++      showEnded('The exam has ended. This student cannot enter it again.');
++    }
++  } catch (error: unknown) {
++    if (error instanceof SessionUnauthorizedError) {
++      returnToEntry();
++      return;
++    }
++    status.textContent = 'Unable to start the exam';
++  }
++}
++
++async function bootstrap(target: URL) {
++  const id = examId(target);
++  if (!id || target.protocol !== 'https:' || target.hostname !== 'exam.cs.ac.cn' || target.port) {
++    showInvalidLink();
++    return;
++  }
++  const configResponse = await fetch(configURL(target), {credentials: 'include'});
++  if (configResponse.status === 410) {
++    showEnded('This exam has ended.');
++    return;
++  }
++  if (!configResponse.ok) throw new Error('exam configuration fetch failed');
++  const config = await configResponse.json() as ExamConfig;
++  if (config.exam?.id !== id || config.exam.origin !== target.origin ||
++      !config.policy?.signature || !config.policy.key_id ||
++      config.policy.document?.exam_id !== id) {
++    throw new Error('invalid exam configuration');
++  }
++  currentConfig = config;
++  const pageURL = new URL(window.location.href);
++  const existingSession = pageURL.searchParams.get('session_id') ||
++      (localStorage.getItem(storageExam) === id ? localStorage.getItem(storageSession) : null);
++  const existingToken = localStorage.getItem(storageToken);
++  if (!existingSession || !existingToken) {
++    const response = await fetch(new URL('/v1/sessions', serviceOrigin), {
++      method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({exam_id: id, return_uri: returnURI()}),
++    });
++    if (response.status === 410) {
++      showEnded('This student has already completed the exam.');
++      return;
++    }
++    if (!response.ok) throw new Error('exam session creation failed');
++    const created = await response.json();
++    localStorage.setItem(storageSession, created.session_id);
++    localStorage.setItem(storageToken, created.browser_token);
++    localStorage.setItem(storageExam, id);
++    window.location.href = created.authorization_url;
++    return;
++  }
++  currentSessionID = existingSession;
++  const stateResponse = await fetch(new URL(`/v1/sessions/${existingSession}`, serviceOrigin), {
++    headers: {'Authorization': `Bearer ${existingToken}`}, credentials: 'include',
++  });
++  // A previous OIDC attempt may have left a pending session or an expired
++  // browser token in this profile. Do not surface that as an invalid trusted
++  // link: discard the stale local session and start a fresh attempt once.
++  if (stateResponse.status === 401) {
++    clearLocalSession();
++    returnToEntry('The previous exam session expired. Sign in with Connect again.');
++    return;
++  }
++  if (stateResponse.status === 410) {
++    showEnded('The exam has ended or was already submitted.');
++    return;
++  }
++  if (!stateResponse.ok) throw new Error('exam session lookup failed');
++  const state = await stateResponse.json();
++  if (state.state === 'active') {
++    await activateTunnel(config, existingSession, existingToken);
++    showReady(target, config, existingSession);
++    return;
++  }
++  if (state.state !== 'authenticated') {
++    returnToEntry('Connect authentication did not complete. Sign in again to choose an exam.');
++    return;
++  } else {
++    // The authenticated landing page never starts the attempt implicitly.
++    // The student must explicitly confirm after the schedule is available.
++    if (config.exam.starts_at && Date.parse(config.exam.starts_at) > Date.now())
++      showWaiting(target, config, existingSession);
++    else
++      showConfirm(target, config, existingSession);
++  }
++}
++
++function beginConnectLogin() {
++  const destination = 'grips://exam/?auth=1';
++  window.location.href = `${serviceOrigin}/browser/login?return_to=${encodeURIComponent(destination)}`;
++}
++
++function examLabel(exam: AvailableExam): string {
++  if (exam.completed || exam.state === 'ended') return 'Exam ended';
++  if (exam.starts_at && Date.parse(exam.starts_at) > Date.now()) return 'Scheduled exam';
++  return 'Available exam';
++}
++
++function showExamChoices(exams: AvailableExam[]) {
++  clearTimers();
++  clearNativeExamState();
++  title.textContent = 'Choose an exam';
++  message.textContent = 'Select one of the exams assigned to your Connect account.';
++  entrySection.hidden = false;
++  targetSection.hidden = true;
++  scheduleSection.hidden = true;
++  errorElement.hidden = true;
++  launch.hidden = true;
++  end.hidden = true;
++  login.hidden = true;
++  examList.hidden = false;
++  examList.replaceChildren();
++  if (!exams.length) {
++    entryError.textContent = 'No exams are currently assigned to this account.';
++    entryError.hidden = false;
++    status.textContent = 'Signed in; no exam assignments';
++    return;
++  }
++  entryError.hidden = true;
++  for (const exam of exams) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.className = 'exam-choice';
++    button.disabled = exam.completed || exam.state === 'ended';
++    const titleNode = document.createElement('strong');
++    titleNode.textContent = exam.id;
++    const detail = document.createElement('small');
++    detail.textContent = `${examLabel(exam)} · starts ${formatTime(exam.starts_at)} · ends ${formatTime(exam.ends_at)}`;
++    button.append(titleNode, detail);
++    button.onclick = () => void selectExam(exam);
++    examList.append(button);
++  }
++  status.textContent = 'Signed in';
++}
++
++async function loadAvailableExams() {
++  entryError.hidden = true;
++  login.disabled = true;
++  try {
++    const me = await fetch(new URL('/auth/me', serviceOrigin), {credentials: 'include'});
++    if (me.status === 401) {
++      showEntry();
++      entryError.textContent = 'Sign in with Connect to view your exams.';
++      entryError.hidden = false;
++      return;
++    }
++    if (!me.ok) throw new Error('account lookup failed');
++    const response = await fetch(new URL('/v1/exams/available', serviceOrigin), {credentials: 'include'});
++    if (response.status === 401) {
++      showEntry();
++      entryError.textContent = 'Your Connect login has expired. Sign in again.';
++      entryError.hidden = false;
++      return;
++    }
++    if (!response.ok) throw new Error('exam list failed');
++    showExamChoices(await response.json() as AvailableExam[]);
++  } catch {
++    entryError.textContent = 'Unable to reach the exam service.';
++    entryError.hidden = false;
++  } finally {
++    login.disabled = false;
++  }
++}
++
++async function selectExam(exam: AvailableExam) {
++  const target = new URL(`${serviceOrigin}/${encodeURIComponent(exam.id)}`);
++  const url = new URL(window.location.href);
++  url.search = '';
++  url.searchParams.set('target', target.href);
++  window.history.replaceState({}, '', url.toString());
++  login.disabled = true;
++  entryError.hidden = true;
++  try {
++    const response = await fetch(new URL('/v1/sessions', serviceOrigin), {
++      method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({exam_id: exam.id, return_uri: url.toString()}),
++    });
++    if (response.status === 401) {
++      showEntry();
++      entryError.textContent = 'Your Connect login has expired. Sign in again.';
++      entryError.hidden = false;
++      return;
++    }
++    if (response.status === 410) {
++      showEnded('This exam has ended or was already submitted.');
++      return;
++    }
++    if (response.status === 403) {
++      showExamChoices([]);
++      entryError.textContent = 'You are not allowed to enter this exam.';
++      entryError.hidden = false;
++      return;
++    }
++    if (!response.ok) throw new Error('exam session creation failed');
++    const created = await response.json() as {session_id: string; browser_token: string; state: string; authorization_url?: string};
++    localStorage.setItem(storageSession, created.session_id);
++    localStorage.setItem(storageToken, created.browser_token);
++    localStorage.setItem(storageExam, exam.id);
++    url.searchParams.set('session_id', created.session_id);
++    window.history.replaceState({}, '', url.toString());
++    if (created.authorization_url) {
++      window.location.href = created.authorization_url;
++      return;
++    }
++    await bootstrap(target);
++  } catch (error: unknown) {
++    if (error instanceof SessionUnauthorizedError) {
++      returnToEntry();
++      return;
++    }
++    entryError.textContent = 'Unable to start the exam session.';
++    entryError.hidden = false;
++  } finally {
++    login.disabled = false;
++  }
++}
++
++login.onclick = () => beginConnectLogin();
++
++const params = new URLSearchParams(window.location.search);
++const targetValue = params.get('target');
++const action = params.get('action');
++const violation = params.get('violation');
++if (action === 'complete') {
++  const actionExamID = params.get('exam_id') || localStorage.getItem(storageExam) || '';
++  currentSessionID = localStorage.getItem(storageSession) || '';
++  if (actionExamID && currentSessionID) {
++    currentConfig = {exam: {id: actionExamID, origin: serviceOrigin, proxy_origin: serviceOrigin, unlock_path: ''}, oidc: {authorization_endpoint: ''}, policy: {alg: '', key_id: '', document: {}, signature: ''}};
++    void completeCurrent('manual');
++  } else {
++    showEnded('There is no active exam session to submit.');
++  }
++} else if (violation === 'background') {
++  const sessionID = localStorage.getItem(storageSession) || '';
++  const token = localStorage.getItem(storageToken) || '';
++  if (targetValue) {
++    try {
++      const target = new URL(targetValue);
++      void reportViolation(target.origin, sessionID, token, 'background');
++    } catch { /* keep the browser in the safe error state */ }
++  }
++  showInvalidLink('The exam was suspended because the browser moved to the background. Contact the proctor.');
++} else if (params.has('ended')) {
++  showEnded('The exam was submitted. This student cannot enter it again.');
++} else if (params.get('auth') === '1' && !targetValue) {
++  void loadAvailableExams();
++} else if (!targetValue || params.has('error')) {
++  showEntry();
++} else {
++  try {
++    void bootstrap(new URL(targetValue)).catch((error: unknown) => {
++      if (error instanceof SessionUnauthorizedError) {
++        returnToEntry();
++      } else {
++        showInvalidLink(String(error));
++      }
++    });
++  } catch {
++    showInvalidLink();
++  }
++}
+diff --git a/chrome/browser/resources/grips/grips.css b/chrome/browser/resources/grips/grips.css
+new file mode 100644
+index 0000000000000..3106133c6a451
+--- /dev/null
++++ b/chrome/browser/resources/grips/grips.css
+@@ -0,0 +1,204 @@
++:root {
++  color-scheme: light dark;
++  --background: light-dark(#f3f6fb, #0f141c);
++  --card: light-dark(#fff, #181f2a);
++  --foreground: light-dark(#172033, #eef3ff);
++  --muted: light-dark(#5f6b7e, #a7b2c4);
++  --border: light-dark(#d9e0eb, #344052);
++  --primary: #4c73ff;
++  --success: #21a366;
++  --error-bg: light-dark(#fff1f0, #421d20);
++  --error: light-dark(#a8071a, #ff9aa5);
++  font-family: system-ui, sans-serif;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  align-items: center;
++  background:
++      radial-gradient(circle at 15% 15%, rgb(76 115 255 / 14%), transparent 32%),
++      var(--background);
++  color: var(--foreground);
++  display: flex;
++  justify-content: center;
++  margin: 0;
++  min-height: 100vh;
++  padding: 32px;
++}
++
++.exam-card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 18px;
++  box-shadow: 0 24px 70px rgb(0 0 0 / 16%);
++  max-width: 680px;
++  padding: 36px;
++  width: 100%;
++}
++
++.header-row,
++.status-row {
++  align-items: center;
++  display: flex;
++}
++
++.header-row {
++  justify-content: space-between;
++}
++
++.brand {
++  font-size: 18px;
++  font-weight: 750;
++  letter-spacing: -.03em;
++}
++
++.badge {
++  background: rgb(76 115 255 / 12%);
++  border: 1px solid rgb(76 115 255 / 30%);
++  border-radius: 999px;
++  color: var(--primary);
++  font-size: 12px;
++  font-weight: 700;
++  padding: 5px 10px;
++  text-transform: uppercase;
++}
++
++h1 {
++  font-size: 30px;
++  margin: 42px 0 10px;
++}
++
++.muted {
++  color: var(--muted);
++  line-height: 1.6;
++  margin: 0;
++}
++
++.target-panel,
++.error {
++  border-radius: 10px;
++  margin-top: 26px;
++  padding: 16px;
++}
++
++.target-panel {
++  background: rgb(76 115 255 / 7%);
++  border: 1px solid rgb(76 115 255 / 25%);
++}
++
++.code-entry {
++  display: flex;
++  gap: 10px;
++}
++
++.code-entry input {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  color: var(--foreground);
++  flex: 1;
++  font: 700 20px ui-monospace, monospace;
++  letter-spacing: .18em;
++  min-width: 0;
++  padding: 10px 12px;
++  text-transform: uppercase;
++}
++
++.field-error {
++  color: var(--error);
++  font-size: 13px;
++  margin: 9px 0 0;
++}
++
++.exam-list {
++  display: grid;
++  gap: 10px;
++  margin-top: 14px;
++}
++
++.exam-choice {
++  align-items: flex-start;
++  background: var(--card);
++  border: 1px solid var(--border);
++  color: var(--foreground);
++  display: flex;
++  flex-direction: column;
++  text-align: left;
++  width: 100%;
++}
++
++.exam-choice small {
++  color: var(--muted);
++  font-weight: 400;
++  margin-top: 4px;
++}
++
++.countdown {
++  font-size: 22px;
++  font-weight: 700;
++  margin: 8px 0 0;
++}
++
++.label {
++  color: var(--muted);
++  display: block;
++  font-size: 12px;
++  font-weight: 700;
++  margin-bottom: 8px;
++  text-transform: uppercase;
++}
++
++code {
++  font-family: ui-monospace, monospace;
++  overflow-wrap: anywhere;
++}
++
++.actions {
++  display: flex;
++  gap: 12px;
++  margin-top: 24px;
++}
++
++button {
++  background: var(--primary);
++  border: 0;
++  border-radius: 8px;
++  color: white;
++  cursor: pointer;
++  font: inherit;
++  font-weight: 650;
++  padding: 10px 16px;
++}
++
++button#end {
++  background: transparent;
++  border: 1px solid var(--border);
++  color: var(--foreground);
++}
++
++.error {
++  background: var(--error-bg);
++  border: 1px solid color-mix(in srgb, var(--error), transparent 55%);
++  color: var(--error);
++}
++
++.status-row {
++  color: var(--muted);
++  font-size: 13px;
++  gap: 9px;
++  margin-top: 32px;
++}
++
++.status-dot {
++  background: var(--success);
++  border-radius: 50%;
++  height: 8px;
++  width: 8px;
++}
++
++[hidden] {
++  display: none !important;
++}
+diff --git a/chrome/browser/resources/grips/login.html b/chrome/browser/resources/grips/login.html
+new file mode 100644
+index 0000000000000..fea67c4c51d2a
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.html
+@@ -0,0 +1,14 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <meta http-equiv="refresh" content="0;url=https://connect.cs.ac.cn/">
++    <title>Connect sign-in · BYOD Browser</title>
++    <style>body{font-family:system-ui,sans-serif;margin:2rem}</style>
++  </head>
++  <body>
++    <p>Opening Connect sign-in…</p>
++    <p><a href="https://connect.cs.ac.cn/">Continue with Connect</a></p>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/login.ts b/chrome/browser/resources/grips/login.ts
+new file mode 100644
+index 0000000000000..f9d56ebc05af7
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.ts
+@@ -0,0 +1,33 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++const connectURL = 'https://connect.cs.ac.cn/';
++const button = document.querySelector<HTMLButtonElement>('#login');
++const status = document.querySelector<HTMLElement>('#status');
++
++function openConnect() {
++  // A top-level navigation is intentional: Connect's host-only cookies are
++  // stored in the normal Chromium profile and are then reused by the exam's
++  // standard OIDC authorization-code flow. An iframe would make this a
++  // third-party cookie and would be blocked by modern cookie policies.
++  window.location.replace(connectURL);
++}
++
++button?.addEventListener('click', openConnect);
++
++// Match the browser's normal sign-in affordance: opening grips://login starts
++// the Connect flow immediately, while leaving a button for blocked scripts or
++// users who want to retry after a transient network failure. The `manual`
++// query is used by browser tests to keep the WebUI document committed.
++if (!new URLSearchParams(window.location.search).has('manual')) {
++  window.setTimeout(() => {
++    if (document.visibilityState === 'visible') {
++      openConnect();
++    }
++  }, 100);
++}
++
++if (status) {
++  status.textContent = 'Connect login opens in this tab; after signing in, open an exam link.';
++}
+diff --git a/chrome/browser/resources/settings/people_page/people_page.html.ts b/chrome/browser/resources/settings/people_page/people_page.html.ts
+index b3303085acf69..5ca3e2d935f9e 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.html.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.html.ts
+@@ -14,6 +14,17 @@ export function getHtml(this: SettingsPeoplePageElement) {
+       <div>
+ 
+ <if expr="not is_chromeos">
++        <!-- BYOD Connect is independent of Chromium's Google identity. -->
++        <div id="byod-connect-login" class="cr-row first two-line">
++          <div class="flex cr-padded-text">
++            <div>$i18n{byodConnectSignIn}</div>
++            <div class="secondary">$i18n{byodConnectSignInDescription}</div>
++          </div>
++          <cr-button class="action-button" @click="${this.onConnectLoginClick_}">
++            $i18n{byodConnectSignIn}
++          </cr-button>
++        </div>
++
+         ${this.shouldShowSyncAccountControl_() ? html`
+           <settings-sync-account-control
+               .syncStatus="${this.syncStatus!}"
+diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
+index 0dcc177daa1ad..8a16a5b9bb1f6 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.ts
+@@ -331,6 +331,14 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+     Router.getInstance().navigateTo(routes.ACCOUNT);
+   }
+ 
++  /** Opens the BYOD Connect login page in this settings tab. */
++  protected onConnectLoginClick_() {
++    // Ask the browser process to navigate. A renderer-initiated transition
++    // from chrome://settings to the custom grips:// scheme is blocked by the
++    // child-process security policy and becomes about:blank#blocked.
++    this.syncBrowserProxy_.startSignIn(ChromeSigninAccessPoint.SETTINGS);
++  }
++
+   protected onGoogleServicesClick_() {
+     Router.getInstance().navigateTo(routes.GOOGLE_SERVICES);
+   }
+diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
+index 83b50c9d0440e..9cd5028218a77 100644
+--- a/chrome/browser/ui/browser_actions.cc
++++ b/chrome/browser/ui/browser_actions.cc
+@@ -58,11 +58,13 @@
+ #include "components/search_engines/ai_mode_button_config.h"
+ #include "components/search_engines/ai_mode_button_service.h"
+ #include "components/tab_groups/tab_group_id.h"
++#include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/page_zoom.h"
+ #include "ui/base/interaction/element_identifier.h"
+ #include "ui/base/interaction/element_tracker.h"
+ #include "ui/base/window_open_disposition.h"
++#include "ui/base/page_transition_types.h"
+ #if BUILDFLAG(IS_MAC)
+ #include "chrome/browser/global_keyboard_shortcuts_mac.h"
+ #include "chrome/browser/ui/browser_commands_mac.h"
+@@ -241,6 +243,7 @@
+ #include "ui/menus/simple_menu_model.h"
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
++#include "url/gurl.h"
+ 
+ #if !BUILDFLAG(IS_CHROMEOS)
+ #include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
+@@ -326,6 +329,15 @@ actions::ActionItem::ActionItemBuilder SidePanelAction(
+       .SetProperty(actions::kActionItemPinnableKey, pinnable_state);
+ }
+ 
++void OpenGripsLogin(BrowserWindowInterface* browser) {
++  browser->OpenURL(
++      content::OpenURLParams(
++          GURL("grips://login/"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++          /*is_renderer_initiated=*/false),
++      base::NullCallback());
++}
++
+ }  // namespace
+ 
+ DEFINE_USER_DATA(BrowserActions);
+@@ -4002,16 +4014,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+           base::BindRepeating(
+               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
+                  actions::ActionInvocationContext context) {
+-                Profile* profile = bwi->GetProfile();
+-                signin::IdentityManager* identity_manager =
+-                    IdentityManagerFactory::GetForProfileIfExists(profile);
+-                CoreAccountInfo account;
+-                if (identity_manager) {
+-                  account = identity_manager->GetPrimaryAccountInfo(
+-                      signin::ConsentLevel::kSignin);
+-                }
+-                signin_ui_util::EnableSyncFromSingleAccountPromo(
+-                    profile, account, signin_metrics::AccessPoint::kMenu);
++                OpenGripsLogin(bwi);
+               },
+               bwi))
+           .SetActionId(kActionTurnOnSync)
+@@ -4022,16 +4025,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+           base::BindRepeating(
+               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
+                  actions::ActionInvocationContext context) {
+-                Profile* profile = bwi->GetProfile();
+-                signin::IdentityManager* identity_manager =
+-                    IdentityManagerFactory::GetForProfileIfExists(profile);
+-                CoreAccountInfo account;
+-                if (identity_manager) {
+-                  account = identity_manager->GetPrimaryAccountInfo(
+-                      signin::ConsentLevel::kSignin);
+-                }
+-                signin_ui_util::SignInFromSingleAccountPromo(
+-                    profile, account, signin_metrics::AccessPoint::kMenu);
++                OpenGripsLogin(bwi);
+               },
+               bwi))
+           .SetActionId(kActionShowSignin)
+@@ -4042,9 +4036,7 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+           base::BindRepeating(
+               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
+                  actions::ActionInvocationContext context) {
+-                Profile* profile = bwi->GetProfile();
+-                signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(
+-                    profile, signin_metrics::AccessPoint::kMenu);
++                OpenGripsLogin(bwi);
+               },
+               bwi))
+           .SetActionId(kActionShowSigninWhenPaused)
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 3741ba7671d22..11323949dce59 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -15,6 +15,7 @@
+ #include "base/debug/profiler.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/i18n/rtl.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/user_metrics.h"
+@@ -129,6 +130,7 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/translate/core/browser/translate_manager.h"
+ #include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+@@ -143,8 +145,10 @@
+ #include "ui/accessibility/accessibility_features.h"
+ #include "ui/actions/actions.h"
+ #include "ui/base/ui_base_features.h"
++#include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
++#include "url/gurl.h"
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/devtools/devtools_policy_dialog.h"
+@@ -205,6 +209,15 @@ namespace chrome {
+ 
+ namespace {
+ 
++void OpenGripsLogin(Browser* browser) {
++  browser->OpenURL(
++      content::OpenURLParams(
++          GURL("grips://login/"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++          /*is_renderer_initiated=*/false),
++      base::NullCallback());
++}
++
+ // Ensures that - if we have not popped up an infobar to prompt the user to e.g.
+ // reload the current page - that the content pane of the browser is refocused.
+ void AppInfoDialogClosedCallback(SessionID session_id,
+@@ -987,22 +1000,13 @@ void BrowserCommandController::HandleCommandWithDisposition(
+       break;
+ #endif  // !BUILDFLAG(IS_CHROMEOS)
+     case IDC_TURN_ON_SYNC:
+-      signin_ui_util::EnableSyncFromSingleAccountPromo(
+-          browser_->GetProfile(),
+-          GetAccountInfoFromProfile(browser_->GetProfile())
+-              .GetCoreAccountInfo(),
+-          signin_metrics::AccessPoint::kMenu);
++      OpenGripsLogin(browser_);
+       break;
+     case IDC_SHOW_SIGNIN:
+-      signin_ui_util::SignInFromSingleAccountPromo(
+-          browser_->GetProfile(),
+-          GetAccountInfoFromProfile(browser_->GetProfile())
+-              .GetCoreAccountInfo(),
+-          signin_metrics::AccessPoint::kMenu);
++      OpenGripsLogin(browser_);
+       break;
+     case IDC_SHOW_SIGNIN_WHEN_PAUSED:
+-      signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(
+-          browser_->GetProfile(), signin_metrics::AccessPoint::kMenu);
++      OpenGripsLogin(browser_);
+       break;
+     case IDC_SHOW_PASSWORD_MANAGER:
+       ShowPasswordManager(browser_);
+diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
+index 598e361a29886..e371520d886ca 100644
+--- a/chrome/browser/ui/startup/infobar_utils.cc
++++ b/chrome/browser/ui/startup/infobar_utils.cc
+@@ -25,7 +25,6 @@
+ #include "chrome/browser/ui/session_crashed_bubble.h"
+ #include "chrome/browser/ui/startup/automation_infobar_delegate.h"
+ #include "chrome/browser/ui/startup/bad_flags_prompt.h"
+-#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
+ #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
+ #include "chrome/browser/ui/startup/oscryptasync_availability_infobar_delegate.h"
+ #include "chrome/browser/ui/startup/startup_browser_creator.h"
+@@ -40,7 +39,6 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/common/content_switches.h"
+-#include "google_apis/google_api_keys.h"
+ 
+ #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt.h"
+@@ -253,20 +251,6 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
+   infobars::ContentInfoBarManager* infobar_manager =
+       infobars::ContentInfoBarManager::FromWebContents(web_contents);
+ 
+-  if (!google_apis::HasAPIKeyConfigured()) {
+-    if (infobars::IsInfoBarMigrated(
+-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE)) {
+-      if (auto* manager =
+-              infobars::BrowserInfoBarManager::From(g_browser_process)) {
+-        manager->Show(
+-            tabs::TabInterface::GetFromContents(web_contents),
+-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE);
+-      }
+-    } else {
+-      GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
+-    }
+-  }
+-
+   if (ObsoleteSystem::IsObsoleteNowOrSoon()) {
+     PrefService* local_state = g_browser_process->local_state();
+     if (!local_state ||
+diff --git a/chrome/browser/ui/startup/url_util.cc b/chrome/browser/ui/startup/url_util.cc
+index 910f1e7a7c37e..b0ff4844e8824 100644
+--- a/chrome/browser/ui/startup/url_util.cc
++++ b/chrome/browser/ui/startup/url_util.cc
+@@ -84,7 +84,8 @@ bool ValidateLaunchUrlWebUnsafe(const GURL& url) {
+ 
+   auto* policy = content::ChildProcessSecurityPolicy::GetInstance();
+   return policy->IsWebSafeScheme(url.GetScheme()) ||
+-         url.SchemeIs(url::kFileScheme) || url_scheme_is_chrome ||
++         url.SchemeIs(url::kFileScheme) ||
++         url.SchemeIs(chrome::kGripsScheme) || url_scheme_is_chrome ||
+          url_scheme_is_content || url_points_to_an_approved_settings_page ||
+          url.spec() == url::kAboutBlankURL;
+ }
+diff --git a/chrome/browser/ui/startup/url_util_unittest.cc b/chrome/browser/ui/startup/url_util_unittest.cc
+index f2cabc129fc6d..bffcc046b1e06 100644
+--- a/chrome/browser/ui/startup/url_util_unittest.cc
++++ b/chrome/browser/ui/startup/url_util_unittest.cc
+@@ -20,6 +20,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebUnsafe) {
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("https://google.com")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("file:///tmp/test")));
+   EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(GURL("about:blank")));
++  EXPECT_TRUE(ValidateLaunchUrlWebUnsafe(
++      GURL("grips://exam.cs.ac.cn/example-exam")));
+ 
+   // chrome:// settings
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -67,6 +69,8 @@ TEST(UrlUtilTest, ValidateLaunchUrlWebSafe) {
+   // Privileged or local schemes should be rejected in WebSafe context.
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("file:///tmp/test")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("chrome://settings")));
++  EXPECT_FALSE(ValidateLaunchUrlWebSafe(
++      GURL("grips://exam.cs.ac.cn/example-exam")));
+   EXPECT_FALSE(
+       ValidateLaunchUrlWebSafe(GURL("chrome://settings/resetProfileSettings")));
+   EXPECT_FALSE(ValidateLaunchUrlWebSafe(GURL("javascript:alert(1)")));
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 63c3090b4c75b..2ebc0ff221c14 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -691,6 +691,10 @@ class BrowserView::ExclusiveAccessContextImpl
+   }
+ 
+   bool CanUserExitFullscreen() const override {
++    if (BrowserWindowFullscreenController::From(browser_view_->browser())
++            ->IsForceFullscreen()) {
++      return false;
++    }
+ #if BUILDFLAG(IS_CHROMEOS)
+     return !platform_util::IsBrowserLockedFullscreen(browser_view_->browser());
+ #else
+@@ -769,10 +773,12 @@ class BrowserView::ExclusiveAccessContextImpl
+       ExclusiveAccessBubbleHideCallback first_hide_callback) override {
+     // Whether we should remove the bubble if it exists, or not show the bubble.
+     // TODO(jamescook): Figure out what to do with mouse-lock.
+-    bool should_close_bubble = false;
++    bool should_close_bubble =
++        BrowserWindowFullscreenController::From(browser_view_->browser())
++            ->IsForceFullscreen();
+ #if BUILDFLAG(IS_CHROMEOS)
+     // Trusted pinned mode does not allow to escape. So do not show the bubble.
+-    should_close_bubble =
++    should_close_bubble |=
+         platform_util::IsBrowserLockedFullscreen(browser_view_->browser_.get());
+ #endif
+     if (!params.has_download) {
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+index bf179e0a15c8a..23cd7dfbd7521 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+@@ -101,6 +101,9 @@
+ #include "ui/strings/grit/ui_strings.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/widget/widget.h"
++#include "content/public/browser/page_navigator.h"
++#include "ui/base/page_transition_types.h"
++#include "url/gurl.h"
+ 
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+ #include "chrome/browser/internal/profiles/profile_view_avatar_decoration_specs_branded.h"
+@@ -399,15 +402,17 @@ void ProfileMenuView::OnSigninButtonClicked(
+   }
+   GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
+ 
+-  // Pending while the HistorySyncPillExperiment is in progress.
+-  if (button_type == ActionableItem::kSigninReauthButton) {
+-    // The reauth button does not trigger a sync opt in.
+-    signin_ui_util::ShowReauthForAccount(&profile(), account.email,
+-                                         access_point);
+-    return;
+-  }
+-  signin_ui_util::EnableSyncFromSingleAccountPromo(&profile(), account,
+-                                                   access_point);
++  // BYOD Browser uses Connect as its account provider. Keep Chromium's
++  // GAIA/DICE identity stack untouched (it is still needed by unrelated
++  // Chromium components), but replace the profile-menu sign-in action with a
++  // top-level navigation to the Connect login page. This stores the normal
++  // host-only Connect cookie in the current profile; the exam OIDC flow then
++  // reuses that SSO session in the same profile without copying cookies.
++  browser().OpenURL(content::OpenURLParams(
++      GURL("grips://login/"), content::Referrer(),
++      WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++      /*is_renderer_initiated=*/false),
++      base::NullCallback());
+ }
+ 
+ void ProfileMenuView::OnSignoutButtonClicked() {
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 2a4eae8943e6a..193aa99f42f4b 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -81,6 +81,7 @@ source_set("configs") {
+     "//chrome/browser/ui/webui/local_state",
+     "//chrome/browser/ui/webui/location_internals",
+     "//chrome/browser/ui/webui/management",
++    "//chrome/browser/ui/webui/grips",
+     "//chrome/browser/ui/webui/media",
+     "//chrome/browser/ui/webui/metrics_internals",
+     "//chrome/browser/ui/webui/net_internals",
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+index c3020dfdea16e..f1584b3a2f4c5 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+@@ -73,6 +73,7 @@
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
+ #include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
+ #include "chrome/browser/ui/webui/downloads/downloads_ui.h"
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
+ #include "chrome/browser/ui/webui/history/history_ui.h"
+ #include "chrome/browser/ui/webui/iwa_dev/iwa_dev_ui.h"
+ #include "chrome/browser/ui/webui/management/management_ui.h"
+@@ -159,6 +160,17 @@ WebUIController* NewWebUI(WebUI* web_ui, const GURL& url) {
+ // associated with it.
+ WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
+                                              const GURL& url) {
++  if (url.SchemeIs(chrome::kGripsScheme)) {
++    if (url.host() == chrome::kGripsExamHost ||
++        url.host() == chrome::kGripsTrustedExamHost) {
++      return &NewWebUI<GripsExamUI>;
++    }
++    if (url.host() == chrome::kGripsLoginHost) {
++      return &NewWebUI<GripsLoginUI>;
++    }
++    return nullptr;
++  }
++
+   // This will get called a lot to check all URLs, so do a quick check of other
+   // schemes to filter out most URLs.
+ #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
+@@ -345,6 +357,13 @@ bool ChromeWebUIControllerFactory::IsWebUIAllowedToMakeNetworkRequests(
+   // If you are adding a new host to this list, please file a corresponding bug
+   // to track its removal. See https://crbug.com/40091019 for the metabug.
+   return
++      // BYOD exam bootstrap fetches its signed configuration and OIDC session
++      // state from the exam control plane. Keep the privileged WebUI origin
++      // isolated, but allow only the two exact grips exam hosts to use the
++      // normal network loader for HTTPS requests.
++      (origin.scheme() == chrome::kGripsScheme &&
++       (origin.host() == chrome::kGripsExamHost ||
++        origin.host() == chrome::kGripsTrustedExamHost)) ||
+       // https://crbug.com/40571286
+       origin.host() == chrome::kChromeUISyncConfirmationHost ||
+       // https://crbug.com/41382586
+diff --git a/chrome/browser/ui/webui/grips/BUILD.gn b/chrome/browser/ui/webui/grips/BUILD.gn
+new file mode 100644
+index 0000000000000..0b4e1028861e4
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/BUILD.gn
+@@ -0,0 +1,47 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++source_set("grips") {
++  sources = [
++    "grips_ui.cc",
++    "grips_ui.h",
++    "grips_url_handler.cc",
++    "grips_url_handler.h",
++  ]
++
++  public_deps = [
++    "//content/public/browser",
++    "//ui/webui",
++  ]
++
++  deps = [
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/ui",
++    "//chrome/browser/resources/grips:resources",
++    "//chrome/common",
++    "//net",
++    "//services/network/public/mojom",
++    "//services/network/public/cpp",
++    "//ui/base",
++    "//url",
++  ]
++}
++
++if (!is_android) {
++  source_set("browser_tests") {
++    testonly = true
++    defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
++    sources = [ "grips_ui_browsertest.cc" ]
++    deps = [
++      ":grips",
++      "//chrome/common",
++      "//chrome/test:test_support",
++      "//content/test:test_support",
++      "//net",
++      "//testing/gtest",
++      "//url",
++    ]
++  }
++}
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+new file mode 100644
+index 0000000000000..50247779cbe36
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -0,0 +1,842 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include <cstdint>
++#include <deque>
++#include <memory>
++#include <optional>
++#include <vector>
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include "base/functional/callback_helpers.h"
++#include "base/functional/bind.h"
++#include "base/json/json_writer.h"
++#include "base/logging.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/uuid.h"
++#include "base/strings/escape.h"
++#include "base/supports_user_data.h"
++#include "base/values.h"
++#include "base/timer/timer.h"
++#include "base/time/time.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/fullscreen/browser_window_fullscreen_controller.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/grit/grips_resources.h"
++#include "chrome/grit/grips_resources_map.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/byod_navigation_audit.h"
++#include "content/public/browser/page_navigator.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "content/public/browser/web_ui_message_handler.h"
++#include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++#include "net/base/url_util.h"
++#include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
++#include "net/http/http_response_headers.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "services/network/public/mojom/content_security_policy.mojom.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition.h"
++#include "ui/base/base_window.h"
++#include "ui/webui/webui_util.h"
++#include "url/origin.h"
++
++namespace {
++
++void ConfigureExamObserver(content::WebContents* web_contents,
++                           const std::string& source_host,
++                           std::vector<url::Origin> allowed_origins,
++                           std::optional<double> exam_ends_at_ms,
++                           const std::string& audit_session_id,
++                           const std::string& audit_token);
++void DeactivateExamObserver(content::WebContents* web_contents);
++
++std::string AuditURL(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
++    return std::string();
++  GURL::Replacements replacements;
++  replacements.ClearUsername();
++  replacements.ClearPassword();
++  replacements.ClearQuery();
++  replacements.ClearRef();
++  GURL clean = url.ReplaceComponents(replacements);
++  if (clean.spec().size() > 4096)
++    return clean.DeprecatedGetOriginAsURL().spec();
++  return clean.spec();
++}
++
++// Independent of the tab lifetime so a tab-close event can finish sending.
++// Only in-memory, bounded retries; browser shutdown/OS kill is best effort.
++class GripsAuditReporter : public base::RefCounted<GripsAuditReporter> {
++ public:
++  GripsAuditReporter(scoped_refptr<network::SharedURLLoaderFactory> factory,
++                    std::string session_id, std::string token)
++      : factory_(std::move(factory)), session_id_(std::move(session_id)),
++        token_(std::move(token)),
++        endpoint_("https://exam.cs.ac.cn/v1/sessions/" + session_id_ + "/events") {}
++
++  const std::string& session_id() const { return session_id_; }
++
++  void Report(base::DictValue event) {
++    event.Set("client_event_id", base::Uuid::GenerateRandomV4().AsLowercaseString());
++    event.Set("observed_at_ms", static_cast<double>(
++        base::Time::Now().InMillisecondsSinceUnixEpoch()));
++    if (pending_.size() >= 256) {
++      LOG(WARNING) << "BYOD audit queue full; observation dropped";
++      return;
++    }
++    pending_.push_back(std::move(event));
++    if (!busy_)
++      Send();
++  }
++
++ private:
++  friend class base::RefCounted<GripsAuditReporter>;
++  ~GripsAuditReporter() = default;
++
++  void Send() {
++    if (pending_.empty()) { busy_ = false; return; }
++    busy_ = true;
++    // A single event stays below the server's 64 KiB limit even for long
++    // URLs. IDs remain stable across retries, including lost acknowledgments.
++    base::ListValue events;
++    events.Append(pending_.front().Clone());
++    base::DictValue payload;
++    payload.Set("events", std::move(events));
++    // JSON's numeric type includes integers; omit the forced ".0" suffix on
++    // our exactly representable Unix milliseconds for the int64 API field.
++    auto body = base::WriteJsonWithOptions(
++        payload, base::JSONWriter::OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION);
++    CHECK(body);
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = endpoint_;
++    request->method = "POST";
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    request->redirect_mode = network::mojom::RedirectMode::kError;
++    request->load_flags = net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_PROXY;
++    request->headers.SetHeader("Authorization", "Bearer " + token_);
++    static constexpr auto annotation = net::DefineNetworkTrafficAnnotation(
++        "byod_exam_page_audit", R"(
++          semantics {
++            sender: "BYOD Exam Browser"
++            description: "Reports page-only observations during an active exam."
++            trigger: "Exam page navigation or leaving the exam."
++            data: "Session bearer token, sanitized page URL, actual network route,
++                   client timestamp and lifecycle reason. No query or fragment."
++            destination: OTHER
++            destination_other: "The trusted BYOD exam control service."
++          }
++          policy {
++            cookies_allowed: NO
++            setting: "Only active in the examination tab after exam start."
++            policy_exception_justification: "Required exam audit."
++          })");
++    loader_ = network::SimpleURLLoader::Create(std::move(request), annotation);
++    loader_->AttachStringForUpload(*body, "application/json");
++    loader_->SetTimeoutDuration(base::Seconds(10));
++    loader_->DownloadToString(factory_.get(),
++        base::BindOnce(&GripsAuditReporter::OnComplete, base::WrapRefCounted(this)),
++        1024);
++  }
++
++  void OnComplete(std::optional<std::string> body) {
++    int status = 0;
++    if (loader_->ResponseInfo() && loader_->ResponseInfo()->headers)
++      status = loader_->ResponseInfo()->headers->response_code();
++    const bool ok = loader_->NetError() == net::OK && status == 200;
++    loader_.reset();
++    if (!ok && (status == 0 || status == 429 || status >= 500) && ++retries_ <= 4) {
++      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&GripsAuditReporter::Send, base::WrapRefCounted(this)),
++          base::Seconds(status == 429 ? 60 : 1 << retries_));
++      return;
++    }
++    if (!ok)
++      LOG(WARNING) << "BYOD audit delivery failed; HTTP status=" << status;
++    pending_.pop_front();
++    retries_ = 0;
++    Send();
++  }
++
++  scoped_refptr<network::SharedURLLoaderFactory> factory_;
++  const std::string session_id_;
++  const std::string token_;
++  const GURL endpoint_;
++  std::deque<base::DictValue> pending_;
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  bool busy_ = false;
++  int retries_ = 0;
++};
++
++// Tracks whether BYOD changed the browser window's fullscreen state so the
++// previous state can be restored when the exam ends. This is profile-scoped,
++// allowing the WebUI handler to be recreated when the tab navigates away from
++// grips://exam.
++class GripsFullscreenState : public base::SupportsUserData::Data {
++ public:
++  explicit GripsFullscreenState(bool restore_on_clear)
++      : restore_on_clear(restore_on_clear) {}
++  const bool restore_on_clear;
++};
++
++int kGripsFullscreenStateKey = 0;
++
++void SetByodBrowserFullscreen(Profile* profile,
++                              content::WebContents* web_contents,
++                              bool required,
++                              bool lock_fullscreen) {
++  if (!profile || !web_contents)
++    return;
++  BrowserWindowInterface* browser =
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
++  if (!browser || !browser->GetWindow())
++    return;
++
++  if (required) {
++    BrowserWindowFullscreenController* fullscreen_controller =
++        BrowserWindowFullscreenController::From(browser);
++    if (!fullscreen_controller)
++      return;
++
++    // Heartbeats may refresh the native policy while the same exam remains
++    // active. Keep the original state, but update the force-exit guard.
++    if (profile->GetUserData(&kGripsFullscreenStateKey)) {
++      fullscreen_controller->SetForceFullscreen(lock_fullscreen);
++      if (lock_fullscreen && !browser->GetWindow()->IsFullscreen())
++        chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
++      return;
++    }
++
++    const bool was_fullscreen = browser->GetWindow()->IsFullscreen();
++    profile->SetUserData(
++        &kGripsFullscreenStateKey,
++        std::make_unique<GripsFullscreenState>(!was_fullscreen));
++    fullscreen_controller->SetForceFullscreen(lock_fullscreen);
++    if (!was_fullscreen)
++      chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
++    return;
++  }
++
++  auto* state = static_cast<GripsFullscreenState*>(
++      profile->GetUserData(&kGripsFullscreenStateKey));
++  if (!state)
++    return;
++  const bool restore = state->restore_on_clear;
++  if (auto* fullscreen_controller =
++          BrowserWindowFullscreenController::From(browser)) {
++    // Clear the guard before toggling out so the normal window implementation
++    // is allowed to leave fullscreen when the exam ends.
++    fullscreen_controller->SetForceFullscreen(false);
++  }
++  profile->SetUserData(&kGripsFullscreenStateKey, nullptr);
++  if (restore && browser->GetWindow()->IsFullscreen())
++    chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
++}
++
++class GripsExamNetworkMessageHandler : public content::WebUIMessageHandler {
++ public:
++  GripsExamNetworkMessageHandler() = default;
++  GripsExamNetworkMessageHandler(const GripsExamNetworkMessageHandler&) = delete;
++  GripsExamNetworkMessageHandler& operator=(const GripsExamNetworkMessageHandler&) = delete;
++
++  void RegisterMessages() override {
++    web_ui()->RegisterMessageCallback(
++        "setByodTunnelConfig",
++        base::BindRepeating(&GripsExamNetworkMessageHandler::HandleSet,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "clearByodTunnelConfig",
++        base::BindRepeating(&GripsExamNetworkMessageHandler::HandleClear,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "setByodFullscreen",
++        base::BindRepeating(
++            &GripsExamNetworkMessageHandler::HandleFullscreen,
++            base::Unretained(this)));
++  }
++
++ private:
++  static bool ReadBytes(const base::DictValue& dict,
++                        const char* key,
++                        std::vector<uint8_t>* output) {
++    const base::ListValue* list = dict.FindList(key);
++    if (!list || list->empty() || list->size() > 64) {
++      return false;
++    }
++    output->clear();
++    output->reserve(list->size());
++    for (const base::Value& value : *list) {
++      std::optional<int> item = value.GetIfInt();
++      if (!item || *item < 0 || *item > 255) {
++        return false;
++      }
++      output->push_back(static_cast<uint8_t>(*item));
++    }
++    return true;
++  }
++
++  static bool ReadAllowedOrigins(const base::DictValue& dict,
++                                 std::vector<url::Origin>* output) {
++    output->clear();
++    const base::ListValue* list = dict.FindList("allowedOrigins");
++    // Older browser resources may omit the field. The observer still keeps
++    // exam.cs.ac.cn and the configured source host as mandatory defaults.
++    if (!list)
++      return true;
++    if (list->size() > 64)
++      return false;
++    output->reserve(list->size());
++    for (const base::Value& value : *list) {
++      const std::string* serialized = value.GetIfString();
++      if (!serialized || serialized->size() > 2048)
++        return false;
++      GURL origin_url(*serialized);
++      if (!origin_url.is_valid() || !origin_url.SchemeIsHTTPOrHTTPS() ||
++          origin_url.has_username() || origin_url.has_password() ||
++          !origin_url.query().empty() || !origin_url.ref().empty() ||
++          (origin_url.path() != "" && origin_url.path() != "/")) {
++        return false;
++      }
++      url::Origin origin = url::Origin::Create(origin_url);
++      if (origin.opaque())
++        return false;
++      output->push_back(std::move(origin));
++    }
++    return true;
++  }
++
++  static bool ReadTunnelHosts(const base::DictValue& dict,
++                              std::vector<std::string>* output) {
++    output->clear();
++    const base::ListValue* list = dict.FindList("tunnelHosts");
++    if (!list || list->size() > 64)
++      return false;
++    output->reserve(list->size());
++    for (const base::Value& value : *list) {
++      const std::string* serialized = value.GetIfString();
++      if (!serialized || serialized->empty() || serialized->size() > 253)
++        return false;
++      std::string host = base::ToLowerASCII(*serialized);
++      GURL url("https://" + host);
++      if (!url.is_valid() || url.host() != host || url.has_port() ||
++          url.path() != "/" || !url.query().empty() || !url.ref().empty() ||
++          url.has_username() || url.has_password())
++        return false;
++      output->push_back(std::move(host));
++    }
++    return true;
++  }
++
++  void HandleSet(const base::ListValue& args) {
++    if (args.empty()) {
++      return;
++    }
++    const base::DictValue* dict = args[0].GetIfDict();
++    if (!dict) {
++      return;
++    }
++    const std::string* source_host = dict->FindString("sourceHost");
++    const std::string* proxy_host = dict->FindString("proxyHost");
++    const std::string* endpoint_id = dict->FindString("endpointId");
++    const std::string* ticket = dict->FindString("ticket");
++    const std::string* audit_session_id = dict->FindString("auditSessionId");
++    const std::string* audit_token = dict->FindString("auditToken");
++    std::optional<double> exam_ends_at_ms = dict->FindDouble("examEndsAtMs");
++    std::optional<int> proxy_port = dict->FindInt("proxyPort");
++    std::vector<url::Origin> allowed_origins;
++    std::vector<std::string> tunnel_hosts;
++    if (!source_host || !proxy_host || !endpoint_id || !ticket ||
++        !proxy_port || *proxy_port < 1 || *proxy_port > 65535 ||
++        !ReadAllowedOrigins(*dict, &allowed_origins) ||
++        !ReadTunnelHosts(*dict, &tunnel_hosts)) {
++      return;
++    }
++    // The trusted HTTPS shell is the only bridge sender. Never allow it to
++    // choose a reporting origin or inject headers/path segments.
++    if (!audit_session_id || audit_session_id->empty() ||
++        audit_session_id->size() > 128 ||
++        audit_session_id->find_first_not_of(
++            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos ||
++        !audit_token || audit_token->empty() || audit_token->size() > 512 ||
++        audit_token->find_first_not_of(
++            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos)
++      return;
++    Profile* profile = Profile::FromWebUI(web_ui());
++    if (!profile) {
++      return;
++    }
++    auto config = network::mojom::ByodTunnelConfig::New();
++    config->source_host = base::JoinString(tunnel_hosts, ",");
++    config->proxy_host = *proxy_host;
++    config->proxy_port = static_cast<uint16_t>(*proxy_port);
++    config->endpoint_id = *endpoint_id;
++    config->ticket = *ticket;
++    profile->GetDefaultStoragePartition()->GetNetworkContext()->
++        SetByodTunnelConfig(std::move(config));
++    ConfigureExamObserver(web_ui()->GetWebContents(), *source_host,
++                           std::move(allowed_origins), exam_ends_at_ms,
++                           *audit_session_id, *audit_token);
++  }
++
++  void HandleClear(const base::ListValue&) {
++    Profile* profile = Profile::FromWebUI(web_ui());
++    if (profile) {
++      profile->GetDefaultStoragePartition()->GetNetworkContext()->
++          SetByodTunnelConfig(nullptr);
++    }
++    DeactivateExamObserver(web_ui()->GetWebContents());
++  }
++
++  void HandleFullscreen(const base::ListValue& args) {
++    if (args.empty())
++      return;
++    std::optional<bool> required = args[0].GetIfBool();
++    if (!required)
++      return;
++    bool lock_fullscreen = false;
++    if (args.size() > 1) {
++      std::optional<bool> lock = args[1].GetIfBool();
++      if (!lock)
++        return;
++      lock_fullscreen = *lock;
++    }
++    SetByodBrowserFullscreen(Profile::FromWebUI(web_ui()),
++                              web_ui()->GetWebContents(), *required,
++                              *required && lock_fullscreen);
++  }
++};
++
++// The HTTPS exam shell owns the UI and OIDC flow. This observer only keeps the
++// native tunnel/fullscreen controls alive after the shell navigates to the
++// source site and returns violations/expiry to the HTTPS shell.
++class GripsExamCallbackObserver
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<GripsExamCallbackObserver> {
++ public:
++  static void Arm(content::WebContents* web_contents) {
++    CreateForWebContents(web_contents);
++  }
++
++  GripsExamCallbackObserver(const GripsExamCallbackObserver&) = delete;
++  GripsExamCallbackObserver& operator=(const GripsExamCallbackObserver&) = delete;
++
++ private:
++  friend void ConfigureExamObserver(content::WebContents*,
++                                    const std::string&,
++                                    std::vector<url::Origin>,
++                                    std::optional<double>,
++                                    const std::string&, const std::string&);
++  friend void DeactivateExamObserver(content::WebContents*);
++  friend class content::WebContentsUserData<GripsExamCallbackObserver>;
++  explicit GripsExamCallbackObserver(content::WebContents* web_contents)
++      : content::WebContentsObserver(web_contents),
++        content::WebContentsUserData<GripsExamCallbackObserver>(*web_contents) {}
++
++  void DidFinishNavigation(content::NavigationHandle* handle) override {
++    if (!handle->IsInPrimaryMainFrame())
++      return;
++    if (auditing_)
++      ReportNavigation(handle, false);
++    if (!handle->HasCommitted())
++      return;
++    const GURL callback = handle->GetURL();
++    std::string ended;
++    if (callback.scheme() == "grips" &&
++        (callback.host() == "exam" || callback.host() == "exam.cs.ac.cn") &&
++        net::GetValueForKeyInQuery(callback, "ended", &ended) && ended == "1") {
++      Reset();
++      return;
++    }
++
++    // The exam control document owns manual submission and violation
++    // handling.  Once the source page is active, allow the trusted
++    // grips://exam document to commit in this tab so its action query can
++    // call /v1/exams/{id}/complete and clear the native policy.
++    if (callback.scheme() == "grips" &&
++        (callback.host() == "exam" || callback.host() == "exam.cs.ac.cn")) {
++      LeaveExam("control_page");
++      return;
++    }
++
++    // The OIDC callback returns to an ordinary HTTPS marker first. Chromium
++    // can block an HTTP redirect directly from HTTPS to a custom scheme as an
++    // external-protocol launch. This observer belongs to the original Grips
++    // WebContents, so complete the same-tab return natively after the HTTPS
++    // marker has committed.
++    std::string auth_complete;
++    if (callback.scheme() == "https" && callback.host() == "exam.cs.ac.cn" &&
++        callback.path() == "/" &&
++        net::GetValueForKeyInQuery(callback, "auth", &auth_complete) &&
++        auth_complete == "1") {
++      content::OpenURLParams params(
++          GURL("grips://exam.cs.ac.cn/?auth=1"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB,
++          ui::PAGE_TRANSITION_AUTO_TOPLEVEL, false);
++      web_contents()->OpenURL(params, base::NullCallback());
++      return;
++    }
++
++    // Handle the trusted control-plane callback before the active-exam guard.
++    // Otherwise a previous source navigation could bounce /byod/complete back
++    // to itself instead of returning to the grips document in this tab.
++    if (callback.scheme() == "https" && callback.host() == "exam.cs.ac.cn" &&
++        callback.path() == "/byod/complete") {
++      std::string target_spec;
++      std::string session_id;
++      if (!net::GetValueForKeyInQuery(callback, "target", &target_spec) ||
++          !net::GetValueForKeyInQuery(callback, "session_id", &session_id) ||
++          session_id.empty()) {
++        return;
++      }
++      const GURL target(target_spec);
++      if (!target.is_valid() || target.scheme() != "https" ||
++          target.host() != "exam.cs.ac.cn" || target.path() == "/") {
++        return;
++      }
++      control_url_ = target;
++      LeaveExam("control_page");
++      active_exam_ = false;
++      target_url_ = GURL();
++      const std::string exam_url =
++          "grips://exam.cs.ac.cn/?target=" +
++          base::EscapeQueryParamValue(target.spec(), true) +
++          "&session_id=" + base::EscapeQueryParamValue(session_id, true);
++      content::OpenURLParams params(
++          GURL(exam_url), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++          false);
++      web_contents()->OpenURL(params, base::NullCallback());
++      return;
++    }
++
++    // OIDC redirects and control-plane pages are allowed while establishing or
++    // ending a session. The signed policy and native tunnel are enforced only
++    // for the configured source host.
++    if (IsAllowedNavigation(callback)) {
++      // The source origin updates the restore target. Additional origins from
++      // navigation.allowed_origins (for example IAaa) are transient auth or
++      // other explicitly trusted pages and must not replace the exam target.
++      if (!source_host_.empty() && callback.scheme() == "https" &&
++          callback.host() == source_host_) {
++        active_exam_ = true;
++        target_url_ = callback;
++      }
++      return;
++    }
++
++    // Once the exam is active, a top-level navigation may not leave the
++    // signed exam origin. This catches view-source:, file:, devtools:, and
++    // ordinary external URLs after commit and restores the exam document.
++    if (active_exam_ && !callback.is_empty()) {
++      if (target_url_.is_valid()) {
++        content::OpenURLParams params(
++            target_url_, content::Referrer(),
++            WindowOpenDisposition::CURRENT_TAB,
++            ui::PAGE_TRANSITION_AUTO_TOPLEVEL, false);
++        web_contents()->OpenURL(params, base::NullCallback());
++      }
++      return;
++    }
++  }
++
++  void DidOpenRequestedURL(
++      content::WebContents* new_contents,
++      content::RenderFrameHost* source_render_frame_host,
++      const GURL& url,
++      const content::Referrer& referrer,
++      WindowOpenDisposition disposition,
++      ui::PageTransition transition,
++      bool started_from_context_menu,
++      bool renderer_initiated) override {
++    if (active_exam_ && new_contents) {
++      // Keep explicitly allowed authentication popups in this same tab so
++      // they remain covered by this observer and cannot become an unmanaged
++      // exam window. The source page's opener-based flow still gets the URL.
++      if (IsAllowedNavigation(url)) {
++        content::OpenURLParams params(
++            url, referrer, WindowOpenDisposition::CURRENT_TAB,
++            ui::PAGE_TRANSITION_AUTO_TOPLEVEL, started_from_context_menu);
++        web_contents()->OpenURL(params, base::NullCallback());
++      }
++      new_contents->Close();
++    }
++  }
++
++  void OnVisibilityChanged(content::Visibility visibility) override {
++    if (!active_exam_ || visibility != content::Visibility::HIDDEN ||
++        target_url_.is_empty()) {
++      return;
++    }
++    // Closing a tab first makes it hidden. Defer the background path so a
++    // synchronous tab destruction records tab_closed instead and never tries
++    // to navigate a tab that is being torn down.
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(&GripsExamCallbackObserver::HandleBackground,
++                       weak_factory_.GetWeakPtr()));
++  }
++
++  void HandleBackground() {
++    if (!active_exam_ || web_contents()->IsBeingDestroyed() ||
++        web_contents()->GetVisibility() != content::Visibility::HIDDEN)
++      return;
++    LeaveExam("background");
++    const std::string exam_url =
++        "grips://exam.cs.ac.cn/?target=" +
++        base::EscapeQueryParamValue(
++            control_url_.is_valid() ? control_url_.spec() : target_url_.spec(),
++            true) +
++        "&violation=background";
++    active_exam_ = false;
++    content::OpenURLParams params(
++        GURL(exam_url), content::Referrer(),
++        WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++        false);
++    web_contents()->OpenURL(params, base::NullCallback());
++  }
++
++  void OnExamExpired() {
++    LeaveExam("expired");
++    Profile* profile = Profile::FromBrowserContext(
++        web_contents()->GetBrowserContext());
++    if (profile) {
++      profile->GetDefaultStoragePartition()->GetNetworkContext()->
++          SetByodTunnelConfig(nullptr);
++      SetByodBrowserFullscreen(profile, web_contents(), false, false);
++    }
++    Reset();
++    content::OpenURLParams params(
++        GURL("grips://exam.cs.ac.cn/?ended=1"), content::Referrer(),
++        WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++        false);
++    web_contents()->OpenURL(params, base::NullCallback());
++  }
++
++  bool active_exam_ = false;
++  bool auditing_ = false;
++  scoped_refptr<GripsAuditReporter> audit_;
++  GURL target_url_;
++  GURL control_url_;
++  std::string source_host_;
++  std::vector<url::Origin> allowed_origins_;
++  base::OneShotTimer deadline_timer_;
++
++  void DidRedirectNavigation(content::NavigationHandle* handle) override {
++    if (auditing_ && handle->IsInPrimaryMainFrame())
++      ReportNavigation(handle, true);
++  }
++
++  void WebContentsDestroyed() override { LeaveExam("tab_closed"); }
++
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
++    LeaveExam("renderer_gone");
++  }
++
++  void ReportNavigation(content::NavigationHandle* handle, bool redirect) {
++    GURL url = handle->GetURL();
++    const auto& chain = handle->GetRedirectChain();
++    if (redirect && chain.size() >= 2)
++      url = chain[chain.size() - 2];
++    const auto route = content::GetByodNavigationAudit(handle);
++    base::DictValue event;
++    event.Set("type", redirect ? "page_redirect" : "page_navigation");
++    event.Set("url", AuditURL(url));
++    if (redirect)
++      event.Set("redirect_url", AuditURL(handle->GetURL()));
++    event.Set("navigation_id", base::NumberToString(handle->GetNavigationId()));
++    event.Set("route", url.SchemeIsHTTPOrHTTPS() ? route.route : "none");
++    event.Set("route_reason", url.SchemeIsHTTPOrHTTPS() ? route.reason : "non_http");
++    event.Set("outcome", redirect ? "redirect" :
++        handle->GetNetErrorCode() == net::ERR_ABORTED ? "cancelled" :
++        handle->GetNetErrorCode() != net::OK ? "failed" :
++        handle->HasCommitted() ? "committed" : "cancelled");
++    event.Set("net_error", handle->GetNetErrorCode());
++    if (handle->GetResponseHeaders())
++      event.Set("http_status", handle->GetResponseHeaders()->response_code());
++    audit_->Report(std::move(event));
++  }
++
++  void LeaveExam(const char* reason) {
++    if (!auditing_ || !audit_)
++      return;
++    base::DictValue event;
++    event.Set("type", "exam_left");
++    event.Set("reason", reason);
++    event.Set("url", AuditURL(web_contents()->GetLastCommittedURL()));
++    audit_->Report(std::move(event));
++    auditing_ = false;
++  }
++
++  bool IsAllowedNavigation(const GURL& url) const {
++    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
++      return false;
++    if (url.scheme() == "https" && url.host() == "exam.cs.ac.cn")
++      return true;
++    if (!source_host_.empty() && url.scheme() == "https" &&
++        url.host() == source_host_)
++      return true;
++    const url::Origin origin = url::Origin::Create(url);
++    if (origin.opaque())
++      return false;
++    for (const url::Origin& allowed : allowed_origins_) {
++      if (origin.IsSameOriginWith(allowed))
++        return true;
++    }
++    return false;
++  }
++
++ public:
++  void SetSourceHost(const std::string& source_host,
++                     std::vector<url::Origin> allowed_origins,
++                     std::optional<double> exam_ends_at_ms,
++                     const std::string& audit_session_id,
++                     const std::string& audit_token) {
++    if (!audit_ || audit_->session_id() != audit_session_id) {
++      LeaveExam("session_replaced");
++      audit_ = base::MakeRefCounted<GripsAuditReporter>(
++          web_contents()->GetBrowserContext()->GetDefaultStoragePartition()->
++              GetURLLoaderFactoryForBrowserProcess(), audit_session_id, audit_token);
++    }
++    if (!auditing_) {
++      auditing_ = true;
++      base::DictValue event;
++      event.Set("type", "exam_entered");
++      event.Set("reason", "started");
++      audit_->Report(std::move(event));
++    }
++    deadline_timer_.Stop();
++    source_host_ = source_host;
++    allowed_origins_ = std::move(allowed_origins);
++    // The native policy is installed while the HTTPS shell is embedded in
++    // this WebUI. Treat the shell itself as the safe restore target until the
++    // source navigation commits and replaces it.
++    active_exam_ = true;
++    target_url_ = web_contents()->GetLastCommittedURL();
++    control_url_ = target_url_;
++    if (exam_ends_at_ms && *exam_ends_at_ms > 0) {
++      const base::Time deadline =
++          base::Time::FromMillisecondsSinceUnixEpoch(*exam_ends_at_ms);
++      const base::TimeDelta delay = deadline - base::Time::Now();
++      if (delay <= base::TimeDelta()) {
++        OnExamExpired();
++      } else {
++        deadline_timer_.Start(
++            FROM_HERE, delay,
++            base::BindOnce(&GripsExamCallbackObserver::OnExamExpired,
++                           base::Unretained(this)));
++      }
++    }
++  }
++
++  void Reset() {
++    LeaveExam("policy_cleared");
++    audit_.reset();
++    deadline_timer_.Stop();
++    active_exam_ = false;
++    target_url_ = GURL();
++    control_url_ = GURL();
++    source_host_.clear();
++    allowed_origins_.clear();
++  }
++
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++  base::WeakPtrFactory<GripsExamCallbackObserver> weak_factory_{this};
++};
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(GripsExamCallbackObserver);
++
++void ConfigureExamObserver(content::WebContents* web_contents,
++                           const std::string& source_host,
++                           std::vector<url::Origin> allowed_origins,
++                           std::optional<double> exam_ends_at_ms,
++                           const std::string& audit_session_id,
++                           const std::string& audit_token) {
++  if (!web_contents)
++    return;
++  GripsExamCallbackObserver::CreateForWebContents(web_contents);
++  if (auto* observer =
++          GripsExamCallbackObserver::FromWebContents(web_contents)) {
++    observer->SetSourceHost(source_host, std::move(allowed_origins),
++                            exam_ends_at_ms, audit_session_id, audit_token);
++  }
++}
++
++void DeactivateExamObserver(content::WebContents* web_contents) {
++  if (!web_contents)
++    return;
++  if (auto* observer =
++          GripsExamCallbackObserver::FromWebContents(web_contents)) {
++    observer->Reset();
++  }
++}
++
++}  // namespace
++
++GripsExamUI::GripsExamUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/true) {
++  web_ui->AddMessageHandler(std::make_unique<GripsExamNetworkMessageHandler>());
++  const std::string host(
++      web_ui->GetWebContents()->GetURL().host());
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      Profile::FromWebUI(web_ui), host == chrome::kGripsTrustedExamHost
++          ? chrome::kGripsTrustedExamHost : chrome::kGripsExamHost);
++  source->SetSupportedScheme(chrome::kGripsScheme);
++  webui::SetupWebUIDataSource(source, kGripsResources,
++                              IDR_GRIPS_BRIDGE_HTML);
++
++  // Configuration and session requests are limited to the trusted exam
++  // origin; the server returns only a short-lived browser session token.
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc,
++      "connect-src https://exam.cs.ac.cn http://127.0.0.1:8787;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src grips://exam grips://exam.cs.ac.cn 'self';");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::FrameSrc,
++      "frame-src https://exam.cs.ac.cn;");
++
++  GripsExamCallbackObserver::Arm(web_ui->GetWebContents());
++}
++
++GripsExamUI::~GripsExamUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsExamUI)
++
++GripsLoginUI::GripsLoginUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/false) {
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      Profile::FromWebUI(web_ui), chrome::kGripsLoginHost);
++  source->SetSupportedScheme(chrome::kGripsScheme);
++  webui::SetupWebUIDataSource(source, kGripsResources,
++                              IDR_GRIPS_LOGIN_HTML);
++
++  // login.ts performs a top-level navigation to Connect. Keep the page's
++  // script and stylesheet scoped to the trusted login origin; Connect itself
++  // is a normal HTTPS page after the navigation commits.
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src grips://login 'self';");
++}
++
++GripsLoginUI::~GripsLoginUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsLoginUI)
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.h b/chrome/browser/ui/webui/grips/grips_ui.h
+new file mode 100644
+index 0000000000000..a93aadfd62e5c
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.h
+@@ -0,0 +1,36 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++
++#include "ui/webui/mojo_web_ui_controller.h"
++
++class GripsExamUI : public ui::MojoWebUIController {
++ public:
++  explicit GripsExamUI(content::WebUI* web_ui);
++  GripsExamUI(const GripsExamUI&) = delete;
++  GripsExamUI& operator=(const GripsExamUI&) = delete;
++  ~GripsExamUI() override;
++
++ private:
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++// The BYOD account entry point. It is deliberately separate from
++// Chromium's GAIA/Google identity stack: a top-level Connect navigation
++// stores the Connect host-only cookie in the user's normal profile, and the
++// exam later reuses that session through standard OIDC SSO.
++class GripsLoginUI : public ui::MojoWebUIController {
++ public:
++  explicit GripsLoginUI(content::WebUI* web_ui);
++  GripsLoginUI(const GripsLoginUI&) = delete;
++  GripsLoginUI& operator=(const GripsLoginUI&) = delete;
++  ~GripsLoginUI() override;
++
++ private:
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+new file mode 100644
+index 0000000000000..456744cf4171f
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+@@ -0,0 +1,81 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include <string>
++
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/test/browser_test.h"
++#include "net/base/url_util.h"
++#include "url/gurl.h"
++
++namespace {
++
++class GripsUIBrowserTest : public InProcessBrowserTest {
++ protected:
++  content::WebContents* web_contents() {
++    return browser()->tab_strip_model()->GetActiveWebContents();
++  }
++};
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, ExamHostUsesExamController) {
++  ASSERT_TRUE(
++      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kGripsExamUrl)));
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsExamUI>());
++  EXPECT_EQ(u"BYOD Exam", web_contents()->GetTitle());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, PublicExamLinkIsRewritten) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(),
++      GURL("grips://exam.cs.ac.cn/course-101?attempt=first")));
++
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_TRUE(committed.SchemeIs(chrome::kGripsScheme));
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++
++  std::string target;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "target", &target));
++  EXPECT_EQ("https://exam.cs.ac.cn/course-101?attempt=first", target);
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, LoginHostUsesConnectController) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://login/?manual=1")));
++
++  ASSERT_TRUE(web_contents()->GetWebUI());
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_TRUE(committed.SchemeIs(chrome::kGripsScheme));
++  EXPECT_EQ(chrome::kGripsLoginHost, committed.host());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsLoginUI>());
++  EXPECT_EQ(u"Connect sign-in · BYOD Browser", web_contents()->GetTitle());
++}
++
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, UntrustedExamHostIsRejected) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("grips://exam.example.test/course-101")));
++  const GURL committed = web_contents()->GetLastCommittedURL();
++  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
++
++  std::string error;
++  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "error", &error));
++  EXPECT_EQ("invalid_exam_link", error);
++}
++
++}  // namespace
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.cc b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+new file mode 100644
+index 0000000000000..eecbfce0a06d6
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+@@ -0,0 +1,94 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_url_handler.h"
++
++#include <string>
++
++#include "base/strings/escape.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
++#include "chrome/common/url_constants.h"
++#include "url/gurl.h"
++#include "url/url_constants.h"
++
++namespace grips {
++namespace {
++
++GURL ErrorURL() {
++  return GURL("https://exam.cs.ac.cn/?error=invalid_exam_link");
++}
++
++bool IsValidPublicExamEntry(const GURL& url) {
++  if (!url.is_valid() || url.host() != chrome::kGripsTrustedExamHost ||
++      url.has_username() || url.has_password() || url.has_port() ||
++      url.has_ref()) {
++    return false;
++  }
++  return !url.path().empty() && url.path() != "/";
++}
++
++}  // namespace
++
++bool HandleGripsExamURL(GURL* url,
++                        content::BrowserContext* browser_context) {
++  if (!url || !url->SchemeIs(chrome::kGripsScheme)) {
++    return false;
++  }
++
++  if (url->host() == chrome::kGripsExamHost ||
++      url->host() == chrome::kGripsLoginHost) {
++    return false;
++  }
++
++  // Keep manual submission as an in-browser action. The HTTPS shell cannot
++  // rely on the strict byod_session cookie when it is embedded in this
++  // privileged page, so it performs the authenticated POST using its token.
++  if (url->host() == chrome::kGripsTrustedExamHost &&
++      base::StartsWith(url->path(), "/exams/", base::CompareCase::SENSITIVE) &&
++      base::EndsWith(url->path(), "/complete", base::CompareCase::SENSITIVE)) {
++    const std::string path(url->path());
++    const std::string exam_id = path.substr(7, path.size() - 16);
++    if (exam_id.empty() || exam_id.find('/') != std::string::npos) {
++      *url = ErrorURL();
++      return true;
++    }
++    *url = GURL(base::StrCat({"grips://exam.cs.ac.cn/?action=complete&exam_id=",
++        base::EscapeQueryParamValue(exam_id, true)}));
++    return true;
++  }
++
++  // Keep the trusted public alias as a WebUI shell. Its visible exam content
++  // is loaded from https://exam.cs.ac.cn; Chromium only owns the shell and
++  // native control bridge.
++  if (url->host() == chrome::kGripsTrustedExamHost &&
++      !url->has_username() && !url->has_password() && !url->has_port() &&
++      !url->has_ref()) {
++    return false;
++  }
++
++  const bool bare_entry = url->host() == chrome::kGripsTrustedExamHost &&
++      (url->path().empty() || url->path() == "/");
++  if (!bare_entry && !IsValidPublicExamEntry(*url)) {
++    *url = ErrorURL();
++    return true;
++  }
++
++  GURL::Replacements replacements;
++  replacements.SetSchemeStr(url::kHttpsScheme);
++  replacements.ClearRef();
++  const GURL target = url->ReplaceComponents(replacements);
++  if (!target.is_valid() || target.host() != chrome::kGripsTrustedExamHost) {
++    *url = ErrorURL();
++    return true;
++  }
++
++  // The exam shell is ordinary HTTPS content served by byod-server.  The
++  // browser only owns this scheme alias and the native bridge iframe; no
++  // business UI or TypeScript is compiled into Chromium.
++  *url = target;
++  return true;
++}
++
++}  // namespace grips
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.h b/chrome/browser/ui/webui/grips/grips_url_handler.h
+new file mode 100644
+index 0000000000000..3b931ee4efab2
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
++
++class GURL;
++
++namespace content {
++class BrowserContext;
++}
++
++namespace grips {
++
++// Rewrites a public exam entry such as grips://exam.cs.ac.cn/course-101 to
++// the single browser-owned grips://exam/ WebUI. The HTTPS target is carried as
++// data; web content is never rendered under the privileged grips scheme.
++bool HandleGripsExamURL(GURL* url,
++                        content::BrowserContext* browser_context);
++
++}  // namespace grips
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_URL_HANDLER_H_
+diff --git a/chrome/browser/ui/webui/settings/people_handler.cc b/chrome/browser/ui/webui/settings/people_handler.cc
+index 1169a401e01a6..3572bd2f5cd48 100644
+--- a/chrome/browser/ui/webui/settings/people_handler.cc
++++ b/chrome/browser/ui/webui/settings/people_handler.cc
+@@ -73,14 +73,17 @@
+ #include "components/sync/service/sync_service_utils.h"
+ #include "components/sync/service/sync_user_settings.h"
+ #include "components/unified_consent/unified_consent_metrics.h"
++#include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_delegate.h"
+ #include "google_apis/gaia/gaia_auth_util.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "ui/base/page_transition_types.h"
+ #include "ui/base/webui/web_ui_util.h"
+ #include "ui/gfx/image/image.h"
++#include "url/gurl.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_features.h"
+@@ -495,37 +498,16 @@ void PeopleHandler::DisplayGaiaLogin(signin_metrics::AccessPoint access_point) {
+ }
+ 
+ void PeopleHandler::DisplayGaiaLoginInNewTabOrWindow(
+-    signin_metrics::AccessPoint access_point) {
+-  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
+-
+-  syncer::SyncService* service = GetSyncService();
+-  if (service && service->HasUnrecoverableError() &&
+-      identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+-    // When the user has an unrecoverable error, they first have to sign out and
+-    // then sign in again.
+-    // Note: this sets the consent level to `signin::ConsentLevel::kSignin`.
+-    identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
+-        signin_metrics::ProfileSignout::kRevokeSyncFromSettings);
+-    DCHECK(identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+-  }
+-
+-  // If the identity manager already has a primary account, this is a
+-  // re-auth scenario, and we need to ensure that the user signs in with the
+-  // same email address.
+-  if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync) ||
+-      signin_util::IsSigninPending(identity_manager)) {
+-    SigninErrorController* error_controller =
+-        SigninErrorControllerFactory::GetForProfile(profile_);
+-    DCHECK(error_controller->HasError());
+-    signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(profile_,
+-                                                             access_point);
+-    return;
+-  }
+-
+-  DCHECK(IsChangePrimaryAccountAllowed(profile_, /*email=*/std::string()))
+-      << "Primary account already set and change is not allowed";
+-  signin_ui_util::EnableSyncFromSingleAccountPromo(profile_, CoreAccountInfo(),
+-                                                   access_point);
++    signin_metrics::AccessPoint /*access_point*/) {
++  // The BYOD build uses Connect for browser sign-in. Navigate the existing
++  // settings tab to the browser-owned login surface so Connect's host-only
++  // cookie is stored in this profile and can be reused by exam OIDC.
++  web_ui()->GetWebContents()->OpenURL(
++      content::OpenURLParams(
++          GURL("grips://login/"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++          /*is_renderer_initiated=*/false),
++      base::NullCallback());
+ }
+ #endif  // !BUILDFLAG(IS_CHROMEOS)
+ 
+diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+index 774e32188161b..c1356b6892e8e 100644
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -2423,6 +2423,9 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
+   static constexpr webui::LocalizedString kLocalizedStrings[] = {
+       // Top level people strings:
+       {"peoplePageTitle", IDS_SETTINGS_PEOPLE},
++      {"byodConnectSignIn", IDS_SETTINGS_BYOD_CONNECT_SIGN_IN},
++      {"byodConnectSignInDescription",
++       IDS_SETTINGS_BYOD_CONNECT_SIGN_IN_DESCRIPTION},
+       {"syncSettingsSavedToast", IDS_SETTINGS_SYNC_SETTINGS_SAVED_TOAST_LABEL},
+       {"manageGoogleAccount", IDS_SETTINGS_MANAGE_GOOGLE_ACCOUNT},
+       {"syncAndNonPersonalizedServices",
+diff --git a/chrome/browser/ui/webui_browser/webui_browser_exclusive_access_context.cc b/chrome/browser/ui/webui_browser/webui_browser_exclusive_access_context.cc
+index 1dc83298493a7..f8d45e227af4e 100644
+--- a/chrome/browser/ui/webui_browser/webui_browser_exclusive_access_context.cc
++++ b/chrome/browser/ui/webui_browser/webui_browser_exclusive_access_context.cc
+@@ -82,10 +82,11 @@ void WebUIBrowserExclusiveAccessContext::UpdateExclusiveAccessBubble(
+     const ExclusiveAccessBubbleParams& params,
+     ExclusiveAccessBubbleHideCallback first_hide_callback) {
+   // Whether we should remove the bubble if it exists, or not show the bubble.
+-  bool should_close_bubble = false;
++  bool should_close_bubble =
++      BrowserWindowFullscreenController::From(browser_)->IsForceFullscreen();
+ #if BUILDFLAG(IS_CHROMEOS)
+   // Trusted pinned mode does not allow to escape. So do not show the bubble.
+-  should_close_bubble = platform_util::IsBrowserLockedFullscreen(browser_);
++  should_close_bubble |= platform_util::IsBrowserLockedFullscreen(browser_);
+ #endif
+   if (!params.has_download) {
+     // ...TYPE_NONE indicates deleting the bubble, except when used with
+@@ -162,6 +163,9 @@ bool WebUIBrowserExclusiveAccessContext::CanUserEnterFullscreen() const {
+ }
+ 
+ bool WebUIBrowserExclusiveAccessContext::CanUserExitFullscreen() const {
++  if (BrowserWindowFullscreenController::From(browser_)->IsForceFullscreen()) {
++    return false;
++  }
+ #if BUILDFLAG(IS_CHROMEOS)
+   return !platform_util::IsBrowserLockedFullscreen(browser_);
+ #else
+diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
+index bf4f4183dc284..276c50adbaf52 100644
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -223,6 +223,7 @@ template("chrome_extra_paks") {
+         "$root_gen_dir/chrome/gaia_auth_host_resources.pak",
+         "$root_gen_dir/chrome/geic_resources.pak",
+         "$root_gen_dir/chrome/glic_untrusted_resources.pak",
++        "$root_gen_dir/chrome/grips_resources.pak",
+         "$root_gen_dir/chrome/history_resources.pak",
+         "$root_gen_dir/chrome/indigo_resources.pak",
+         "$root_gen_dir/chrome/inspect_resources.pak",
+@@ -271,6 +272,7 @@ template("chrome_extra_paks") {
+         "//chrome/browser/indigo/resources:browser_resources",
+         "//chrome/browser/resources/contextual_cueing/internals:resources",
+         "//chrome/browser/resources/geic:resources",
++        "//chrome/browser/resources/grips:resources",
+         "//components/headless/command_handler",
+         "//content/browser/tracing:resources",
+       ]
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+index a97283168c97c..594f651c790a1 100644
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -193,7 +193,7 @@ static const char* const kChromeStandardURLSchemes[] = {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS)
+     chrome::kChromeNativeScheme,        chrome::kChromeSearchScheme,
+-    dom_distiller::kDomDistillerScheme,
++    chrome::kGripsScheme,               dom_distiller::kDomDistillerScheme,
+ #if BUILDFLAG(IS_ANDROID)
+     content::kAndroidAppScheme,
+ #endif
+@@ -227,6 +227,12 @@ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+   // chrome-search: resources shouldn't trigger insecure content warnings.
+   schemes->secure_schemes.push_back(chrome::kChromeSearchScheme);
+ 
++  // grips: browser-owned bootstrap pages are packaged with the browser.
++  // Exam content itself continues to use HTTPS web origins.
++  schemes->secure_schemes.push_back(chrome::kGripsScheme);
++  // Persist the short-lived session token across the OIDC round trip.
++  url::AddWebStorageScheme(chrome::kGripsScheme);
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Treat extensions as secure because communication with them is entirely in
+   // the browser, so there is no danger of manipulation or eavesdropping on
+diff --git a/chrome/common/url_constants.h b/chrome/common/url_constants.h
+index 1bbf3afad91dd..e86218823d0e1 100644
+--- a/chrome/common/url_constants.h
++++ b/chrome/common/url_constants.h
+@@ -162,6 +162,11 @@ inline constexpr char kChromeSearchRemoteNtpHost[] = "remote-ntp";
+ //     there are additional Instant-PID checks that make sure the request is
+ //     coming from a blessed Instant process, and deny the request.
+ inline constexpr char kChromeSearchScheme[] = "chrome-search";
++inline constexpr char kGripsScheme[] = "grips";
++inline constexpr char kGripsExamHost[] = "exam";
++inline constexpr char kGripsTrustedExamHost[] = "exam.cs.ac.cn";
++inline constexpr char kGripsLoginHost[] = "login";
++inline constexpr char kGripsExamUrl[] = "grips://exam/";
+ 
+ // This is the base URL of content that can be embedded in chrome://new-tab-page
+ // using an <iframe>. The embedded untrusted content can make web requests and
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 5d96c60405807..6bea31922363e 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -215,6 +215,12 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
+ // depending on the Reduce User-Agent reduction phase features.
+ std::string GetUserAgentInternal() {
+   std::string product = GetProductAndVersion();
++  // Keep the normal Chromium UA (including UA Reduction) and add a stable
++  // product token identifying this BYOD build. Use the full version here so
++  // support logs can distinguish BYOD releases even when Chrome's own UA
++  // version is reduced to the major version.
++  product += " BYODBrowser/";
++  product += version_info::GetVersionNumber();
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
+     product.insert(0, "Headless");
+   }
+diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
+index 790d6657077ab..fc2689e5cac36 100644
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -272,6 +272,7 @@ source_set("browser_sources") {
+     "navigation_entry_restore_context.h",
+     "navigation_handle.cc",
+     "navigation_handle.h",
++    "byod_navigation_audit.h",
+     "navigation_handle_timing.cc",
+     "navigation_handle_timing.h",
+     "navigation_handle_user_data.h",
+diff --git a/content/public/browser/byod_navigation_audit.h b/content/public/browser/byod_navigation_audit.h
+new file mode 100644
+index 0000000000000..5c7ef6d4957b9
+--- /dev/null
++++ b/content/public/browser/byod_navigation_audit.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_
++#define CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_
++
++#include "content/common/content_export.h"
++
++namespace content {
++class NavigationHandle;
++
++struct ByodNavigationAudit {
++  const char* route = "unknown";
++  const char* reason = "not_connected";
++};
++
++// Read response metadata without adding a method to the widely included
++// NavigationHandle interface. Only call during DidRedirect/FinishNavigation.
++CONTENT_EXPORT ByodNavigationAudit GetByodNavigationAudit(
++    NavigationHandle* handle);
++}  // namespace content
++
++#endif  // CONTENT_PUBLIC_BROWSER_BYOD_NAVIGATION_AUDIT_H_
+diff --git a/content/public/browser/navigation_handle.cc b/content/public/browser/navigation_handle.cc
+index 94b551898cb82..33d5d5168d2d0 100644
+--- a/content/public/browser/navigation_handle.cc
++++ b/content/public/browser/navigation_handle.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/byod_navigation_audit.h"
+ 
+ #include <utility>
+ 
+@@ -10,9 +11,44 @@
+ #include "content/browser/renderer_host/navigator.h"
+ #include "content/browser/web_contents/web_contents_impl.h"
+ #include "net/ssl/ssl_info.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ 
+ namespace content {
+ 
++ByodNavigationAudit GetByodNavigationAudit(NavigationHandle* handle) {
++  if (handle->IsSameDocument())
++    return {"none", "same_document"};
++  if (handle->IsServedFromBackForwardCache())
++    return {"none", "back_forward_cache"};
++  // A failed final request can still retain the previous redirect response.
++  // Do not mistake that hop's route for the failed destination's route.
++  if (handle->GetNetErrorCode() != 0)
++    return {};
++  const auto* response = NavigationRequest::From(handle)->response();
++  if (!response)
++    return {};
++  // A service worker may synthesize a response or issue a different fetch.
++  // Its response proxy chain does not reliably describe this navigation.
++  if (response->was_fetched_via_service_worker)
++    return {"unknown", "service_worker"};
++  if (!response->network_accessed) {
++    if (response->was_fetched_via_cache || response->was_in_prefetch_cache)
++      return {"none", "cache"};
++    return {"none", "unknown"};
++  }
++  const auto& chain = response->proxy_chain;
++  if (!chain.IsValid())
++    return {"unknown", "network"};
++  if (chain.is_direct())
++    return {"direct", "network"};
++  for (const auto& proxy : chain.proxy_servers()) {
++    if (proxy.host_port_pair().host() == "byod-xhttp.invalid" &&
++        proxy.host_port_pair().port() == 1)
++      return {"tunnel", "network"};
++  }
++  return {"proxy", "network"};
++}
++
+ WebContents* NavigationHandle::GetWebContents() {
+   // The NavigationRequest cannot access the WebContentsImpl as it would be a
+   // layering violation, hence the cast here.
+diff --git a/content/renderer/web_ui_extension.cc b/content/renderer/web_ui_extension.cc
+index a887d81fa5db9..52b5b370c22b3 100644
+--- a/content/renderer/web_ui_extension.cc
++++ b/content/renderer/web_ui_extension.cc
+@@ -48,7 +48,12 @@ bool ShouldRespondToRequest(blink::WebLocalFrame** frame_ptr,
+   bool webui_enabled =
+       (render_frame->GetEnabledBindings().Has(BindingsPolicyValue::kWebUi)) &&
+       (frame_url.SchemeIs(kChromeUIScheme) ||
+-       frame_url.SchemeIs(url::kDataScheme));
++       frame_url.SchemeIs(url::kDataScheme) ||
++       // The Grips browser-owned WebUI uses a custom scheme. The browser
++       // process grants the WebUI binding only to the trusted grips origins;
++       // include that scheme here so chrome.send/getVariableValue work on the
++       // in-tab exam bootstrap page.
++       frame_url.SchemeIs("grips"));
+ 
+   if (!webui_enabled)
+     return false;
+diff --git a/net/base/proxy_delegate.cc b/net/base/proxy_delegate.cc
+index 515426fe1e645..9d474785663bd 100644
+--- a/net/base/proxy_delegate.cc
++++ b/net/base/proxy_delegate.cc
+@@ -8,9 +8,15 @@
+ 
+ #include "net/base/proxy_chain.h"
+ #include "net/http/proxy_fallback.h"
++#include "net/socket/stream_socket.h"
+ 
+ namespace net {
+ 
++std::unique_ptr<StreamSocket> ProxyDelegate::CreateTunnelSocket(
++    const ProxyChain&, const HostPortPair&) {
++  return nullptr;
++}
++
+ std::optional<bool> ProxyDelegate::CanFalloverToNextProxyOverride(
+     const ProxyChain& proxy_chain,
+     int net_error) {
+diff --git a/net/base/proxy_delegate.h b/net/base/proxy_delegate.h
+index ff614802f7bb1..dfbe5a1224e57 100644
+--- a/net/base/proxy_delegate.h
++++ b/net/base/proxy_delegate.h
+@@ -5,6 +5,7 @@
+ #ifndef NET_BASE_PROXY_DELEGATE_H_
+ #define NET_BASE_PROXY_DELEGATE_H_
+ 
++#include <memory>
+ #include <string>
+ 
+ #include "base/types/expected.h"
+@@ -24,6 +25,8 @@ class HttpRequestHeaders;
+ class HttpResponseHeaders;
+ class ProxyInfo;
+ class ProxyResolutionService;
++class HostPortPair;
++class StreamSocket;
+ 
+ // Delegate for setting up a connection.
+ class NET_EXPORT ProxyDelegate {
+@@ -33,6 +36,11 @@ class NET_EXPORT ProxyDelegate {
+   ProxyDelegate& operator=(const ProxyDelegate&) = delete;
+   virtual ~ProxyDelegate() = default;
+ 
++  // Optional native byte-stream transport. Null selects the standard proxy
++  // implementation; a returned socket replaces CONNECT, not source TLS.
++  virtual std::unique_ptr<StreamSocket> CreateTunnelSocket(
++      const ProxyChain& proxy_chain, const HostPortPair& destination);
++
+   // Called as the proxy is being resolved for |url| for a |method| request.
+   // The caller may pass an empty string to get method agnostic resoulution.
+   // Allows the delegate to override the proxy resolution decision made by
+diff --git a/net/http/http_proxy_connect_job.cc b/net/http/http_proxy_connect_job.cc
+index e40cf32cb9c1e..8e641b2549680 100644
+--- a/net/http/http_proxy_connect_job.cc
++++ b/net/http/http_proxy_connect_job.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "net/http/http_proxy_connect_job.h"
++#include "net/base/proxy_delegate.h"
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -281,6 +282,7 @@ LoadState HttpProxyConnectJob::GetLoadState() const {
+   switch (next_state_) {
+     case STATE_TRANSPORT_CONNECT_COMPLETE:
+       return nested_connect_job_->GetLoadState();
++    case STATE_CUSTOM_TUNNEL_COMPLETE:
+     case STATE_HTTP_PROXY_CONNECT:
+     case STATE_HTTP_PROXY_CONNECT_COMPLETE:
+     case STATE_SPDY_PROXY_CREATE_STREAM:
+@@ -430,6 +432,12 @@ int HttpProxyConnectJob::DoLoop(int result) {
+         DCHECK_EQ(OK, rv);
+         rv = DoBeginConnect();
+         break;
++      case STATE_CUSTOM_TUNNEL_COMPLETE:
++        if (rv == OK) {
++          has_established_connection_ = true;
++          SetSocket(std::move(custom_tunnel_socket_), std::nullopt);
++        }
++        break;
+       case STATE_TRANSPORT_CONNECT:
+         DCHECK_EQ(OK, rv);
+         rv = DoTransportConnect();
+@@ -478,6 +486,17 @@ int HttpProxyConnectJob::DoLoop(int result) {
+ 
+ int HttpProxyConnectJob::DoBeginConnect() {
+   connect_start_time_ = base::TimeTicks::Now();
++  if (params_->tunnel() && common_connect_job_params()->proxy_delegate) {
++    custom_tunnel_socket_ =
++        common_connect_job_params()->proxy_delegate->CreateTunnelSocket(
++            params_->proxy_chain(), params_->endpoint());
++    if (custom_tunnel_socket_) {
++      ResetTimer(kHttpProxyConnectJobTunnelTimeout);
++      next_state_ = STATE_CUSTOM_TUNNEL_COMPLETE;
++      return custom_tunnel_socket_->Connect(base::BindOnce(
++          &HttpProxyConnectJob::OnIOComplete, weak_ptr_factory_.GetWeakPtr()));
++    }
++  }
+   ResetTimer(
+       AlternateNestedConnectionTimeout(*params_, network_quality_estimator()));
+   switch (GetProxyServerScheme()) {
+diff --git a/net/http/http_proxy_connect_job.h b/net/http/http_proxy_connect_job.h
+index ef8e49c4d2dbb..607555e5209eb 100644
+--- a/net/http/http_proxy_connect_job.h
++++ b/net/http/http_proxy_connect_job.h
+@@ -241,6 +241,7 @@ class NET_EXPORT_PRIVATE HttpProxyConnectJob : public ConnectJob,
+  private:
+   enum State {
+     STATE_BEGIN_CONNECT,
++    STATE_CUSTOM_TUNNEL_COMPLETE,
+     STATE_TRANSPORT_CONNECT,
+     STATE_TRANSPORT_CONNECT_COMPLETE,
+     STATE_HTTP_PROXY_CONNECT,
+@@ -320,6 +321,7 @@ class NET_EXPORT_PRIVATE HttpProxyConnectJob : public ConnectJob,
+ 
+   std::unique_ptr<ConnectJob> nested_connect_job_;
+   std::unique_ptr<ProxyClientSocket> transport_socket_;
++  std::unique_ptr<StreamSocket> custom_tunnel_socket_;
+ 
+   std::unique_ptr<SpdyStreamRequest> spdy_stream_request_;
+ 
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index e89a9ab84507d..07929fa533ca2 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -991,6 +991,9 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
+ 
+ NetworkContext::~NetworkContext() {
+   is_destructing_ = true;
++  // Cancel browser-owned WSS requests before their URLRequestContext dies.
++  if (proxy_delegate_)
++    proxy_delegate_->ClearByodTunnelConfig();
+ 
+   // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
+   // any in-flight background operations and avoid callback races.
+@@ -2923,10 +2926,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+ 
+   if (params_->initial_custom_proxy_config ||
+       params_->custom_proxy_config_client_receiver) {
+-    builder.set_proxy_delegate(std::make_unique<NetworkServiceProxyDelegate>(
++    auto proxy_delegate = std::make_unique<NetworkServiceProxyDelegate>(
+         std::move(params_->initial_custom_proxy_config),
+         std::move(params_->custom_proxy_config_client_receiver),
+-        std::move(params_->custom_proxy_connection_observer_remote)));
++        std::move(params_->custom_proxy_connection_observer_remote));
++    proxy_delegate_ = proxy_delegate.get();
++    builder.set_proxy_delegate(std::move(proxy_delegate));
+   }
+ 
+   net::NetLog* net_log = nullptr;
+@@ -4078,6 +4083,20 @@ void NetworkContext::SetVariationsHeaders(
+   variations_headers_ = std::move(variations_headers);
+ }
+ 
++void NetworkContext::SetByodTunnelConfig(
++    mojom::ByodTunnelConfigPtr config) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!proxy_delegate_) {
++    return;
++  }
++  if (!config) {
++    proxy_delegate_->ClearByodTunnelConfig();
++    return;
++  }
++  proxy_delegate_->SetByodTunnelConfig(
++      config->source_host, config->proxy_host, config->proxy_port,
++      config->ticket, url_request_context_);
++}
+ 
+ bool NetworkContext::HasCookieAccessForDeviceBoundSession(
+     const net::device_bound_sessions::CookieAccessCheckParams& params) {
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+index 630cb9dffcefc..27d50d0f1aa3e 100644
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -136,6 +136,7 @@ class MdnsResponderManager;
+ class MojoBackendFileOperationsFactory;
+ class NetworkService;
+ class NetworkServiceNetworkDelegate;
++class NetworkServiceProxyDelegate;
+ class P2PSocketManager;
+ 
+ #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+@@ -631,6 +632,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+   void SetVariationsHeaders(
+       variations::mojom::VariationsHeadersPtr variations_headers) override;
+ 
++  void SetByodTunnelConfig(mojom::ByodTunnelConfigPtr config) override;
++
+   void GetDeviceBoundSessionManager(
+       mojo::PendingReceiver<network::mojom::DeviceBoundSessionManager>
+           device_bound_session_manager) override;
+@@ -985,6 +988,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+   // Owned by URLRequestContext.
+   raw_ptr<NetworkServiceNetworkDelegate> network_delegate_ = nullptr;
+ 
++  // Owned by URLRequestContext's proxy delegate. This non-owning pointer is
++  // valid for the lifetime of the context and lets the browser-scoped Mojo
++  // method update the per-profile BYOD routing state.
++  raw_ptr<NetworkServiceProxyDelegate> proxy_delegate_ = nullptr;
++
+   mojom::NetworkContextParamsPtr params_;
+ 
+   // These must be below the URLRequestContext, so they're destroyed before it
+diff --git a/services/network/network_service_proxy_delegate.cc b/services/network/network_service_proxy_delegate.cc
+index 8075625c0c111..411d78f1e6f53 100644
+--- a/services/network/network_service_proxy_delegate.cc
++++ b/services/network/network_service_proxy_delegate.cc
+@@ -4,26 +4,456 @@
+ 
+ #include "services/network/network_service_proxy_delegate.h"
+ 
++#include <algorithm>
++#include <string>
++#include <vector>
++
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "base/memory/ref_counted.h"
+ #include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/timer/timer.h"
+ #include "base/types/expected.h"
++#include "base/uuid.h"
+ #include "net/base/completion_once_callback.h"
++#include "net/base/elements_upload_data_stream.h"
+ #include "net/base/features.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/io_buffer.h"
++#include "net/base/isolation_info.h"
++#include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/proxy_chain.h"
+ #include "net/base/proxy_server.h"
++#include "net/base/transport_info.h"
++#include "net/base/upload_bytes_element_reader.h"
+ #include "net/base/url_util.h"
+ #include "net/http/http_request_headers.h"
++#include "net/http/http_response_headers.h"
+ #include "net/http/http_util.h"
++#include "net/log/net_log_source_type.h"
++#include "net/log/net_log_with_source.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "net/proxy_resolution/proxy_resolution_service.h"
+ #include "net/proxy_resolution/proxy_retry_info.h"
++#include "net/socket/stream_socket.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "net/url_request/url_request.h"
++#include "net/url_request/url_request_context.h"
+ #include "services/network/url_loader.h"
+ #include "url/url_constants.h"
+ 
+ namespace network {
++
++class ByodXHTTPStreamSocket;
++
++class ByodXHTTPTransport : public base::RefCounted<ByodXHTTPTransport> {
++ public:
++  ByodXHTTPTransport(GURL endpoint,
++                     std::string uuid,
++                     net::URLRequestContext* context)
++      : endpoint(std::move(endpoint)),
++        uuid(std::move(uuid)),
++        context(context),
++        isolation(net::IsolationInfo::CreateTransient(std::nullopt)) {}
++  void Revoke();
++  const GURL endpoint;
++  const std::string uuid;
++  const raw_ptr<net::URLRequestContext> context;
++  const net::IsolationInfo isolation;
++  bool active = true;
++  std::vector<base::WeakPtr<ByodXHTTPStreamSocket>> sockets;
++
++ private:
++  friend class base::RefCounted<ByodXHTTPTransport>;
++  ~ByodXHTTPTransport() = default;
++};
++
++// VLESS v0 / encryption=none / flow="" on XHTTP packet-up. This is the
++// transport below Chromium's source SSLClientSocket, not an HTTP proxy on the
++// wire. No loopback listener, CONNECT, MITM certificate or renderer socket.
++class ByodXHTTPStreamSocket final : public net::StreamSocket,
++                                    public net::URLRequest::Delegate {
++ public:
++  ByodXHTTPStreamSocket(scoped_refptr<ByodXHTTPTransport> state,
++                        net::HostPortPair destination)
++      : state_(std::move(state)),
++        destination_(std::move(destination)),
++        log_(net::NetLogWithSource::Make(
++            state_ ? state_->context->net_log() : nullptr,
++            net::NetLogSourceType::SOCKET)),
++        download_buffer_(base::MakeRefCounted<net::IOBufferWithSize>(32768)),
++        response_buffer_(base::MakeRefCounted<net::IOBufferWithSize>(1024)) {}
++  ~ByodXHTTPStreamSocket() override { Disconnect(); }
++
++  int Connect(net::CompletionOnceCallback callback) override {
++    if (connected_) {
++      return net::OK;
++    }
++    if (!state_ || !state_->active || !state_->endpoint.SchemeIs("https") ||
++        !base::Uuid::ParseCaseInsensitive(state_->uuid).is_valid() ||
++        destination_.host().empty() || destination_.host().size() > 253 ||
++        !destination_.port()) {
++      return net::ERR_ACCESS_DENIED;
++    }
++    error_ = net::OK;
++    std::erase_if(state_->sockets, [](const auto& p) { return !p; });
++    state_->sockets.push_back(weak_.GetWeakPtr());
++    session_ = base::Uuid::GenerateRandomV4().AsLowercaseString();
++    connect_callback_ = std::move(callback);
++    deadline_.Start(FROM_HERE, base::Seconds(25),
++                    base::BindOnce(&ByodXHTTPStreamSocket::Fail,
++                                   weak_.GetWeakPtr(), net::ERR_TIMED_OUT));
++    Post(&ByodXHTTPStreamSocket::Start);
++    return net::ERR_IO_PENDING;
++  }
++  void Disconnect() override {
++    weak_.InvalidateWeakPtrs();
++    deadline_.Stop();
++    upload_deadline_.Stop();
++    download_.reset();
++    upload_.reset();
++    connect_callback_.Reset();
++    read_callback_.Reset();
++    write_callback_.Reset();
++    read_buffer_.reset();
++    incoming_.clear();
++    connected_ = download_ready_ = header_sent_ = reading_ = false;
++    response_header_bytes_ = 0;
++    sequence_ = 0;
++    received_ = 0;
++    error_ = net::ERR_SOCKET_NOT_CONNECTED;
++  }
++  void Revoke() { Fail(net::ERR_ABORTED); }
++  bool IsConnected() const override { return connected_ && state_->active; }
++  bool IsConnectedAndIdle() const override {
++    return IsConnected() && incoming_.empty() && !reading_ && !upload_;
++  }
++  int GetPeerAddress(net::IPEndPoint* out) const override {
++    if (!IsConnected()) {
++      return net::ERR_SOCKET_NOT_CONNECTED;
++    }
++    *out = peer_;
++    return net::OK;
++  }
++  int GetLocalAddress(net::IPEndPoint*) const override {
++    return net::ERR_NOT_IMPLEMENTED;
++  }
++  const net::NetLogWithSource& NetLog() const override { return log_; }
++  bool WasEverUsed() const override { return used_; }
++  net::NextProto GetNegotiatedProtocol() const override {
++    return net::NextProto::kProtoUnknown;
++  }
++  bool GetSSLInfo(net::SSLInfo*) override { return false; }
++  int64_t GetTotalReceivedBytes() const override { return received_; }
++  void ApplySocketTag(const net::SocketTag&) override {}
++  int SetReceiveBufferSize(int32_t) override { return net::OK; }
++  int SetSendBufferSize(int32_t) override { return net::OK; }
++
++  int Read(net::IOBuffer* buffer,
++           int length,
++           net::CompletionOnceCallback callback) override {
++    if (!IsConnected()) {
++      return error_ ? error_ : net::ERR_SOCKET_NOT_CONNECTED;
++    }
++    DCHECK(!read_callback_);
++    used_ = true;
++    if (!incoming_.empty()) {
++      return CopyIncoming(buffer, length);
++    }
++    read_buffer_ = buffer;
++    read_length_ = length;
++    read_callback_ = std::move(callback);
++    Post(&ByodXHTTPStreamSocket::PumpRead);
++    return net::ERR_IO_PENDING;
++  }
++  int Write(net::IOBuffer* buffer,
++            int length,
++            net::CompletionOnceCallback callback,
++            const net::NetworkTrafficAnnotationTag&) override {
++    if (!IsConnected()) {
++      return error_ ? error_ : net::ERR_SOCKET_NOT_CONNECTED;
++    }
++    DCHECK(!write_callback_ && !upload_);
++    used_ = true;
++    write_length_ = std::min(length, 65536);
++    write_callback_ = std::move(callback);
++    SendPacket(std::string(buffer->data(), write_length_));
++    return net::ERR_IO_PENDING;
++  }
++
++ private:
++  static constexpr auto kAnnotation =
++      net::DefineNetworkTrafficAnnotation("byod_exam_xhttp_tunnel", R"(
++        semantics {
++          sender: "BYOD Exam Browser"
++          description: "Transports VLESS exam streams using HTTPS XHTTP."
++          trigger: "An active exam requests an explicitly listed tunnel host."
++          data: "Temporary VLESS UUID, target and opaque source TLS bytes."
++          destination: OTHER
++          destination_other: "The trusted BYOD exam HTTPS service."
++        }
++        policy {
++          cookies_allowed: NO
++          setting: "Controlled by the active exam; revoked on exam end."
++          policy_exception_justification: "BYOD exam transport."
++        })");
++
++  void Post(void (ByodXHTTPStreamSocket::*method)()) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(method, weak_.GetWeakPtr()));
++  }
++  std::unique_ptr<net::URLRequest> MakeRequest(const std::string& suffix) {
++    // Padding is transport metadata, not authentication. This is the default
++    // Xray query fallback when no Referer is present.
++    GURL url(state_->endpoint.spec() + session_ + suffix +
++             "?x_padding=" + std::string(128, 'X'));
++    auto request = state_->context->CreateRequest(
++        url, net::MAXIMUM_PRIORITY, this, kAnnotation,
++        net::handles::kInvalidNetworkHandle);
++    request->set_disallow_credentials();
++    request->set_isolation_info(state_->isolation);
++    // The outer request must never recursively enter this tunnel. Also keep
++    // session traffic out of the profile HTTP cache. Long-lived downloads
++    // must not consume all HTTP/1.1 slots and starve uploads. Chromium's inner
++    // socket pool already limits exam connections; only the transport's own
++    // HTTP requests bypass the outer pool limit (requires MAXIMUM_PRIORITY).
++    request->SetLoadFlags(request->load_flags() | net::LOAD_BYPASS_PROXY |
++                          net::LOAD_DISABLE_CACHE |
++                          net::LOAD_IGNORE_LIMITS);
++    return request;
++  }
++  void Start() {
++    if (!state_->active) {
++      Fail(net::ERR_ABORTED);
++      return;
++    }
++    std::string compact;
++    base::RemoveChars(state_->uuid, "-", &compact);
++    std::vector<uint8_t> uuid;
++    if (!base::HexStringToBytes(compact, &uuid) || uuid.size() != 16) {
++      Fail(net::ERR_INVALID_ARGUMENT);
++      return;
++    }
++    std::string header(1, '\0');
++    header.append(reinterpret_cast<const char*>(uuid.data()), uuid.size());
++    header.push_back(0);  // addons length
++    header.push_back(1);  // TCP
++    header.push_back(static_cast<char>(destination_.port() >> 8));
++    header.push_back(static_cast<char>(destination_.port()));
++    header.push_back(2);  // domain address; remote DNS
++    header.push_back(static_cast<char>(destination_.host().size()));
++    header.append(destination_.host());
++    download_ = MakeRequest("");
++    // The HTTP/1.1 download is an indefinite stream, never a reusable
++    // response body. Prevent the HTTP body drainer from keeping it alive
++    // after revocation. Chromium strips this hop-by-hop header on HTTP/2.
++    download_->SetExtraRequestHeaderByName("Connection", "close", true);
++    download_->Start();
++    SendPacket(header);
++  }
++  void SendPacket(const std::string& bytes) {
++    upload_ = MakeRequest("/" + base::NumberToString(sequence_++));
++    upload_->set_method("POST");
++    upload_->set_upload(net::ElementsUploadDataStream::CreateWithReader(
++        net::UploadOwnedBytesElementReader::CreateWithString(bytes)));
++    upload_deadline_.Start(
++        FROM_HERE, base::Seconds(30),
++        base::BindOnce(&ByodXHTTPStreamSocket::Fail, weak_.GetWeakPtr(),
++                       net::ERR_TIMED_OUT));
++    upload_->Start();
++  }
++  int OnConnected(net::URLRequest* request,
++                  const net::TransportInfo& info,
++                  net::CompletionOnceCallback) override {
++    if (request == download_.get()) {
++      peer_ = info.endpoint;
++    }
++    return net::OK;
++  }
++  void OnReceivedRedirect(net::URLRequest*,
++                          const net::RedirectInfo&,
++                          bool*) override {
++    Fail(net::ERR_UNSAFE_REDIRECT);
++  }
++  void OnAuthRequired(net::URLRequest*,
++                      const net::AuthChallengeInfo&) override {
++    Fail(net::ERR_ACCESS_DENIED);
++  }
++  void OnSSLCertificateError(net::URLRequest*,
++                             int error,
++                             const net::SSLInfo&,
++                             bool) override {
++    Fail(error);
++  }
++  void OnCertificateRequested(net::URLRequest*,
++                              net::SSLCertRequestInfo*) override {
++    Fail(net::ERR_BAD_SSL_CLIENT_AUTH_CERT);
++  }
++  void OnResponseStarted(net::URLRequest* request, int error) override {
++    if (error != net::OK) {
++      Fail(error);
++      return;
++    }
++    if (!request->response_headers() ||
++        request->response_headers()->response_code() != 200) {
++      Fail(net::ERR_TUNNEL_CONNECTION_FAILED);
++      return;
++    }
++    if (request == download_.get()) {
++      download_ready_ = true;
++      Post(&ByodXHTTPStreamSocket::MaybeConnected);
++    } else {
++      Post(&ByodXHTTPStreamSocket::ReadUploadResponse);
++    }
++  }
++  void ReadUploadResponse() {
++    int result =
++        upload_->Read(response_buffer_.get(), response_buffer_->size());
++    if (result != net::ERR_IO_PENDING) {
++      FinishUpload(result);
++    }
++  }
++  void FinishUpload(int result) {
++    // packet-up has an empty 200 response. Do not treat an HTML error page as
++    // an accepted upload or buffer an unbounded response from a broken proxy.
++    if (result != 0) {
++      Fail(result < 0 ? result : net::ERR_INVALID_RESPONSE);
++      return;
++    }
++    upload_deadline_.Stop();
++    upload_.reset();
++    if (!header_sent_) {
++      header_sent_ = true;
++      Post(&ByodXHTTPStreamSocket::MaybeConnected);
++    } else if (write_callback_) {
++      std::move(write_callback_).Run(write_length_);
++    }
++  }
++  void MaybeConnected() {
++    if (!download_ready_ || !header_sent_ || !connect_callback_) {
++      return;
++    }
++    connected_ = true;
++    deadline_.Stop();
++    // Do not wait for the VLESS response here: Xray may wait for the source's
++    // first bytes, which need Chromium to send its TLS ClientHello first.
++    std::move(connect_callback_).Run(net::OK);
++  }
++  void PumpRead() {
++    if (reading_ || !read_callback_ || !download_) {
++      return;
++    }
++    reading_ = true;
++    int result =
++        download_->Read(download_buffer_.get(), download_buffer_->size());
++    if (result != net::ERR_IO_PENDING) {
++      FinishRead(result);
++    }
++  }
++  void OnReadCompleted(net::URLRequest* request, int result) override {
++    if (request == upload_.get()) {
++      FinishUpload(result);
++    } else {
++      FinishRead(result);
++    }
++  }
++  void FinishRead(int result) {
++    reading_ = false;
++    if (result <= 0) {
++      Fail(result ? result : net::ERR_CONNECTION_CLOSED);
++      return;
++    }
++    int offset = 0;
++    const std::string chunk(download_buffer_->data(), result);
++    while (response_header_bytes_ < 2 && offset < result) {
++      if (chunk[offset++] != 0) {
++        Fail(net::ERR_INVALID_RESPONSE);
++        return;
++      }
++      response_header_bytes_++;
++    }
++    incoming_.append(chunk, offset, result - offset);
++    if (incoming_.empty()) {
++      Post(&ByodXHTTPStreamSocket::PumpRead);
++      return;
++    }
++    int count = CopyIncoming(read_buffer_.get(), read_length_);
++    read_buffer_.reset();
++    std::move(read_callback_).Run(count);
++  }
++  int CopyIncoming(net::IOBuffer* buffer, int length) {
++    int count = std::min(static_cast<int>(incoming_.size()), length);
++    std::copy_n(incoming_.data(), count, buffer->data());
++    incoming_.erase(0, count);
++    received_ += count;
++    return count;
++  }
++  void Fail(int error) {
++    error_ = error;
++    connected_ = false;
++    deadline_.Stop();
++    upload_deadline_.Stop();
++    download_.reset();
++    upload_.reset();
++    weak_.InvalidateWeakPtrs();
++    Post(&ByodXHTTPStreamSocket::NotifyFailure);
++  }
++  void NotifyFailure() {
++    auto alive = weak_.GetWeakPtr();
++    if (connect_callback_) {
++      std::move(connect_callback_).Run(error_);
++    }
++    if (!alive) {
++      return;
++    }
++    if (read_callback_) {
++      read_buffer_.reset();
++      std::move(read_callback_).Run(error_);
++    }
++    if (!alive) {
++      return;
++    }
++    if (write_callback_) {
++      std::move(write_callback_).Run(error_);
++    }
++  }
++
++  scoped_refptr<ByodXHTTPTransport> state_;
++  const net::HostPortPair destination_;
++  const net::NetLogWithSource log_;
++  std::string session_, incoming_;
++  uint64_t sequence_ = 0;
++  net::IPEndPoint peer_;
++  std::unique_ptr<net::URLRequest> download_, upload_;
++  scoped_refptr<net::IOBufferWithSize> download_buffer_, response_buffer_;
++  scoped_refptr<net::IOBuffer> read_buffer_;
++  int read_length_ = 0, write_length_ = 0, response_header_bytes_ = 0;
++  int error_ = net::ERR_SOCKET_NOT_CONNECTED;
++  int64_t received_ = 0;
++  bool connected_ = false, download_ready_ = false, header_sent_ = false;
++  bool reading_ = false, used_ = false;
++  net::CompletionOnceCallback connect_callback_, read_callback_,
++      write_callback_;
++  base::OneShotTimer deadline_, upload_deadline_;
++  base::WeakPtrFactory<ByodXHTTPStreamSocket> weak_{this};
++};
++
++void ByodXHTTPTransport::Revoke() {
++  active = false;
++  for (auto& socket : sockets) {
++    if (socket) {
++      socket->Revoke();
++    }
++  }
++  sockets.clear();
++}
++
+ namespace {
+ 
+ bool ApplyProxyConfigToProxyInfo(const net::ProxyConfig::ProxyRules& rules,
+@@ -127,7 +557,9 @@ NetworkServiceProxyDelegate::NetworkServiceProxyDelegate(
+   }
+ }
+ 
+-NetworkServiceProxyDelegate::~NetworkServiceProxyDelegate() = default;
++NetworkServiceProxyDelegate::~NetworkServiceProxyDelegate() {
++  ClearByodTunnelConfig();
++}
+ 
+ void NetworkServiceProxyDelegate::OnResolveProxy(
+     const GURL& url,
+@@ -135,6 +567,15 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
+     const std::string& method,
+     const net::ProxyRetryInfoMap& proxy_retry_info,
+     net::ProxyInfo* result) {
++  if (byod_tunnel_enabled_ && url.SchemeIs(url::kHttpsScheme) &&
++      std::find(byod_tunnel_hosts_.begin(), byod_tunnel_hosts_.end(), url.host()) !=
++          byod_tunnel_hosts_.end()) {
++    // Only explicitly signed tunnel hosts are routed through BYOD.
++    result->UseNamedProxy(base::StrCat(
++        {"http://", byod_proxy_server_.GetHost(), ":",
++         base::NumberToString(byod_proxy_server_.GetPort())}));
++    return;
++  }
+   if (!EligibleForProxy(*result, method)) {
+     return;
+   }
+@@ -189,6 +630,58 @@ void NetworkServiceProxyDelegate::SetProxyResolutionService(
+   proxy_resolution_service_ = proxy_resolution_service;
+ }
+ 
++void NetworkServiceProxyDelegate::SetByodTunnelConfig(
++    const std::string& tunnel_hosts_serialized,
++    const std::string& proxy_host,
++    uint16_t proxy_port,
++    const std::string& uuid,
++    net::URLRequestContext* context) {
++  ClearByodTunnelConfig();
++  byod_tunnel_hosts_ =
++      base::SplitString(tunnel_hosts_serialized, ",", base::TRIM_WHITESPACE,
++                        base::SPLIT_WANT_NONEMPTY);
++  byod_tunnel_enabled_ = !byod_tunnel_hosts_.empty();
++  // A private routing marker, never a real HTTP proxy or DNS destination.
++  byod_proxy_server_ = net::ProxyServer::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTP, "byod-xhttp.invalid", uint16_t{1});
++  const GURL endpoint(
++      base::StrCat({"https://", proxy_host, ":",
++                    base::NumberToString(proxy_port), "/v1/xhttp/"}));
++  if (!context || !endpoint.is_valid() || endpoint.host() != "exam.cs.ac.cn" ||
++      endpoint.has_username() || endpoint.has_password() || proxy_port == 0 ||
++      !base::Uuid::ParseCaseInsensitive(uuid).is_valid()) {
++    return;  // The selected route remains fail-closed.
++  }
++  byod_xhttp_ =
++      base::MakeRefCounted<ByodXHTTPTransport>(endpoint, uuid, context);
++}
++
++std::unique_ptr<net::StreamSocket>
++NetworkServiceProxyDelegate::CreateTunnelSocket(
++    const net::ProxyChain& chain,
++    const net::HostPortPair& target) {
++  if (!chain.is_single_proxy() ||
++      chain.First().host_port_pair() !=
++          net::HostPortPair("byod-xhttp.invalid", 1)) {
++    return nullptr;
++  }
++  const bool allowed =
++      byod_tunnel_enabled_ &&
++      std::find(byod_tunnel_hosts_.begin(), byod_tunnel_hosts_.end(),
++                target.host()) != byod_tunnel_hosts_.end();
++  return std::make_unique<ByodXHTTPStreamSocket>(
++      allowed ? byod_xhttp_ : nullptr, target);
++}
++
++void NetworkServiceProxyDelegate::ClearByodTunnelConfig() {
++  if (byod_xhttp_) {
++    byod_xhttp_->Revoke();
++  }
++  byod_xhttp_.reset();
++  byod_tunnel_enabled_ = false;
++  byod_tunnel_hosts_.clear();
++}
++
+ void NetworkServiceProxyDelegate::OnCustomProxyConfigUpdated(
+     mojom::CustomProxyConfigPtr proxy_config,
+     OnCustomProxyConfigUpdatedCallback callback) {
+diff --git a/services/network/network_service_proxy_delegate.h b/services/network/network_service_proxy_delegate.h
+index 3e0dcc4e99474..fb836e6766eca 100644
+--- a/services/network/network_service_proxy_delegate.h
++++ b/services/network/network_service_proxy_delegate.h
+@@ -5,6 +5,10 @@
+ #ifndef SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
+ #define SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
+ 
++#include <cstdint>
++#include <string>
++#include <vector>
++
+ #include "base/component_export.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/types/expected.h"
+@@ -13,15 +17,19 @@
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/proxy_delegate.h"
++#include "net/base/proxy_server.h"
++#include "net/http/http_request_headers.h"
+ #include "net/proxy_resolution/proxy_resolution_service.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ 
+ namespace net {
+ class HttpRequestHeaders;
+ class ProxyResolutionService;
++class URLRequestContext;
+ }  // namespace net
+ 
+ namespace network {
++class ByodXHTTPTransport;
+ 
+ // NetworkServiceProxyDelegate is used to support the custom proxy
+ // configuration, which can be set in
+@@ -65,6 +73,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+   void SetProxyResolutionService(
+       net::ProxyResolutionService* proxy_resolution_service) override;
+ 
++  // Configures the explicit host allowlist and proxy endpoint used by the
++  // BYOD exam transport.
++  void SetByodTunnelConfig(const std::string& tunnel_hosts_serialized,
++                           const std::string& proxy_host,
++                           uint16_t proxy_port,
++                           const std::string& uuid,
++                           net::URLRequestContext* context);
++  void ClearByodTunnelConfig();
++  std::unique_ptr<net::StreamSocket> CreateTunnelSocket(
++      const net::ProxyChain&, const net::HostPortPair&) override;
++
+  private:
+   friend class NetworkServiceProxyDelegateTest;
+ 
+@@ -88,6 +107,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+   mojo::Remote<mojom::CustomProxyConnectionObserver> observer_;
+ 
+   raw_ptr<net::ProxyResolutionService> proxy_resolution_service_ = nullptr;
++
++  bool byod_tunnel_enabled_ = false;
++  std::vector<std::string> byod_tunnel_hosts_;
++  net::ProxyServer byod_proxy_server_;
++  scoped_refptr<ByodXHTTPTransport> byod_xhttp_;
+ };
+ 
+ }  // namespace network
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index 1470ee8a8056d..d810504b6341e 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -139,6 +139,18 @@ struct CustomProxyConfig {
+   HttpRequestHeaders connect_tunnel_headers;
+ };
+ 
++// Per-profile BYOD exam tunnel state. The trusted browser bridge encodes the
++// explicit tunnel host list in |source_host| as a comma-separated string.
++struct ByodTunnelConfig {
++  string source_host;
++  string proxy_host;
++  uint16 proxy_port;
++  string endpoint_id;
++  string ticket;
++  array<uint8> nonce;
++  array<uint8> proof;
++};
++
+ // Observer of custom proxy connections, especially for when errors occur.
+ interface CustomProxyConnectionObserver {
+   // Called when use of |bad_proxy| fails due to |net_error|. |net_error| is the
+@@ -1938,4 +1950,10 @@ interface NetworkContext {
+ 
+   // Updates the variations headers to be used for requests.
+   SetVariationsHeaders(variations.mojom.VariationsHeaders? variations_headers);
++
++  // Installs or clears the BYOD exam tunnel for this network context. Only
++  // trusted browser code may call this method; renderer requests are not
++  // exposed this interface.
++  [AllowedContext=sandbox.mojom.Context.kBrowser]
++  SetByodTunnelConfig(ByodTunnelConfig? config);
+ };
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index c90c7c5e5521e..7c182d60d15d7 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -548,6 +548,10 @@
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [4035],
+   },
++  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/grips/resources.grd": {
++    "META": {"sizes": {"includes": [10]}},
++    "includes": [4037],
++  },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/history/resources.grd": {
+     "META": {"sizes": {"includes": [60]}},
+     "includes": [4040],

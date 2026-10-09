@@ -1,0 +1,182 @@
+diff --git a/chrome/browser/resources/grips/exam.html b/chrome/browser/resources/grips/exam.html
+--- a/chrome/browser/resources/grips/exam.html
++++ b/chrome/browser/resources/grips/exam.html
+@@ -25,3 +25,7 @@
+         <code>grips://exam.cs.ac.cn/&lt;exam&gt;</code>.
+       </section>
++      <div class="actions">
++        <button id="launch" type="button" hidden>Open exam</button>
++        <button id="end" type="button" hidden>End exam</button>
++      </div>
+      <div class="status-row">
+diff --git a/chrome/browser/resources/grips/exam.ts b/chrome/browser/resources/grips/exam.ts
+--- a/chrome/browser/resources/grips/exam.ts
++++ b/chrome/browser/resources/grips/exam.ts
+@@ -1,44 +1,145 @@
+-// Copyright 2026 The Chromium Authors
+-// Use of this source code is governed by a BSD-style license that can be
+-// found in the LICENSE file.
+-
+-const title = document.querySelector<HTMLElement>('#title')!;
+-const message = document.querySelector<HTMLElement>('#message')!;
+-const targetSection = document.querySelector<HTMLElement>('#target-section')!;
+-const targetElement = document.querySelector<HTMLElement>('#target')!;
+-const errorElement = document.querySelector<HTMLElement>('#error')!;
+-const status = document.querySelector<HTMLElement>('#status')!;
+-
+-function showInvalidLink() {
+-  title.textContent = 'Invalid exam link';
+-  message.textContent =
+-      'The browser did not start an exam session and remains in normal mode.';
+-  errorElement.hidden = false;
+-  targetSection.hidden = true;
+-  status.textContent = 'No restrictions are active';
+-}
+-
+-const params = new URLSearchParams(window.location.search);
+-const target = params.get('target');
+-if (params.has('error') || !target) {
+-  showInvalidLink();
+-} else {
+-  try {
+-    const parsed = new URL(target);
+-    if (parsed.protocol !== 'https:' ||
+-        parsed.hostname !== 'exam.cs.ac.cn' || parsed.port !== '' ||
+-        parsed.pathname === '/') {
+-      showInvalidLink();
+-    } else {
+-      title.textContent = 'Exam link recognized';
+-      message.textContent =
+-          'The browser is still in normal mode. No device restrictions have been applied.';
+-      targetElement.textContent = parsed.href;
+-      targetSection.hidden = false;
+-      errorElement.hidden = true;
+-      status.textContent = 'Ready for OIDC and signed policy integration';
+-    }
+-  } catch {
+-    showInvalidLink();
+-  }
+-}
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++type ExamConfig = {
++  exam: {id: string, origin: string, proxy_origin: string, unlock_path: string},
++  oidc: {authorization_endpoint: string},
++  policy: {alg: string, key_id: string, document: unknown, signature: string},
++};
++
++const title = document.querySelector<HTMLElement>('#title')!;
++const message = document.querySelector<HTMLElement>('#message')!;
++const targetSection = document.querySelector<HTMLElement>('#target-section')!;
++const targetElement = document.querySelector<HTMLElement>('#target')!;
++const errorElement = document.querySelector<HTMLElement>('#error')!;
++const status = document.querySelector<HTMLElement>('#status')!;
++const launch = document.querySelector<HTMLButtonElement>('#launch')!;
++const end = document.querySelector<HTMLButtonElement>('#end')!;
++
++const storageToken = 'byod.browser_token';
++const storageSession = 'byod.session_id';
++
++function showInvalidLink(text = 'The browser did not start an exam session and remains in normal mode.') {
++  title.textContent = 'Invalid exam link';
++  message.textContent = text;
++  errorElement.hidden = false;
++  targetSection.hidden = true;
++  launch.hidden = true;
++  end.hidden = true;
++  status.textContent = 'No restrictions are active';
++}
++
++function examId(target: URL): string {
++  return target.pathname.split('/').filter(Boolean)[0] || '';
++}
++
++function configURL(target: URL): URL {
++  const url = new URL(target.origin);
++  url.pathname = target.pathname.replace(/\/$/, '') + '/.well-known/byod-configuration';
++  return url;
++}
++
++function returnURI(): string {
++  const url = new URL(window.location.href);
++  url.searchParams.delete('session_id');
++  return url.toString();
++}
++
++function showReady(target: URL, config: ExamConfig, sessionId: string) {
++  title.textContent = 'Exam session ready';
++  message.textContent = 'Identity verified and the signed exam policy is loaded.';
++  targetElement.textContent = target.href;
++  targetSection.hidden = false;
++  errorElement.hidden = true;
++  launch.hidden = false;
++  end.hidden = false;
++  status.textContent = `Active session ${sessionId.slice(0, 8)}`;
++  launch.onclick = () => {
++    const destination = new URL(target.href);
++    destination.href = config.exam.proxy_origin + destination.pathname + destination.search;
++    window.location.href = destination.href;
++  };
++  end.onclick = async () => {
++    const token = localStorage.getItem(storageToken) || '';
++    await fetch(new URL(`/v1/sessions/${sessionId}/end`, config.exam.origin), {
++      method: 'POST', headers: {'Authorization': `Bearer ${token}`},
++    });
++    localStorage.removeItem(storageToken);
++    localStorage.removeItem(storageSession);
++    showInvalidLink('The exam session ended and browser restrictions are cleared.');
++  };
++}
++
++async function bootstrap(target: URL) {
++  const id = examId(target);
++  if (!id || target.protocol !== 'https:' || target.hostname !== 'exam.cs.ac.cn' || target.port) {
++    showInvalidLink();
++    return;
++  }
++  const configResponse = await fetch(configURL(target), {credentials: 'include'});
++  if (!configResponse.ok) throw new Error('configuration fetch failed');
++  const config = await configResponse.json() as ExamConfig;
++  if (config.exam?.id !== id || config.exam.origin !== target.origin ||
++      !config.policy?.signature || !config.policy.key_id) {
++    throw new Error('invalid exam configuration');
++  }
++  const existingSession = new URL(window.location.href).searchParams.get('session_id') ||
++      localStorage.getItem(storageSession);
++  const existingToken = localStorage.getItem(storageToken);
++  if (!existingSession || !existingToken) {
++    const response = await fetch(new URL('/v1/sessions', config.exam.origin), {
++      method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({exam_id: id, browser_nonce: crypto.randomUUID(), return_uri: returnURI()}),
++    });
++    if (!response.ok) throw new Error('session creation failed');
++    const created = await response.json();
++    localStorage.setItem(storageSession, created.session_id);
++    localStorage.setItem(storageToken, created.browser_token);
++    window.location.href = created.authorization_url;
++    return;
++  }
++  const stateResponse = await fetch(new URL(`/v1/sessions/${existingSession}`, config.exam.origin), {
++    headers: {'Authorization': `Bearer ${existingToken}`}, credentials: 'include',
++  });
++  if (!stateResponse.ok) throw new Error('session lookup failed');
++  const state = await stateResponse.json();
++  if (state.state !== 'authenticated' && state.state !== 'active') throw new Error('OIDC authentication did not complete');
++  if (state.state === 'authenticated') {
++    const startResponse = await fetch(new URL(`/v1/sessions/${existingSession}/start`, config.exam.origin), {
++      method: 'POST', headers: {'Authorization': `Bearer ${existingToken}`}, credentials: 'include',
++    });
++    if (!startResponse.ok) throw new Error('exam start rejected');
++  }
++  showReady(target, config, existingSession);
++}
++
++const targetValue = new URLSearchParams(window.location.search).get('target');
++if (!targetValue || new URLSearchParams(window.location.search).has('error')) {
++  showInvalidLink();
++} else {
++  try { bootstrap(new URL(targetValue)).catch((error: unknown) => showInvalidLink(String(error))); }
++  catch { showInvalidLink(); }
++}

@@ -1,0 +1,31 @@
+--- a/chrome/browser/resources/grips/exam.ts
++++ b/chrome/browser/resources/grips/exam.ts
+@@ -45,7 +45,7 @@
+   }
+ }
+ 
+-function showInvalidLink(text = 'The browser did not start an exam session and remains in normal mode.') {
++function showInvalidLink(text = 'The browser did not start an exam session and remains in normal mode.', showTrustHint = false) {
+   clearNativeTunnelConfig();
+   if (heartbeatTimer !== undefined) {
+     window.clearInterval(heartbeatTimer);
+@@ -53,7 +53,7 @@
+   }
+   title.textContent = 'Invalid exam link';
+   message.textContent = text;
+-  errorElement.hidden = false;
++  errorElement.hidden = !showTrustHint;
+   targetSection.hidden = true;
+   launch.hidden = true;
+   end.hidden = true;
+@@ -225,8 +225,8 @@
+   }
+   showInvalidLink('The exam was suspended because the browser moved to the background. Contact the proctor to unlock it.');
+ } else if (!targetValue || new URLSearchParams(window.location.search).has('error')) {
+-  showInvalidLink();
++  showInvalidLink('This is not a trusted BYOD exam link. Use a link in the form grips://exam.cs.ac.cn/<exam>.', true);
+ } else {
+   try { bootstrap(new URL(targetValue)).catch((error: unknown) => showInvalidLink(String(error))); }
+-  catch { showInvalidLink(); }
++  catch { showInvalidLink('This is not a trusted BYOD exam link. Use a link in the form grips://exam.cs.ac.cn/<exam>.', true); }
+ }

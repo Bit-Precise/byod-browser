@@ -1,0 +1,12 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+--- a/chrome/browser/ui/webui/grips/grips_page_handlers.cc
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -86,7 +86,7 @@ void LoginPageHandler::OnLoginConfig(
+ 
+   const base::DictValue& body = response.body->GetDict();
+   config->password_auth = body.FindBool("password_auth").value_or(false);
+-  if (const base::Value::List* providers = body.FindList("providers")) {
++  if (const base::ListValue* providers = body.FindList("providers")) {
+     for (const base::Value& provider : *providers) {
+       if (provider.is_string()) {
+         config->providers.push_back(provider.GetString());

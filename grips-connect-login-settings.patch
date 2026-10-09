@@ -1,0 +1,68 @@
+diff --git a/chrome/browser/ui/webui/settings/people_handler.cc b/chrome/browser/ui/webui/settings/people_handler.cc
+--- a/chrome/browser/ui/webui/settings/people_handler.cc
++++ b/chrome/browser/ui/webui/settings/people_handler.cc
+@@ -72,14 +72,17 @@
+ #include "components/sync/service/sync_service_utils.h"
+ #include "components/sync/service/sync_user_settings.h"
+ #include "components/unified_consent/unified_consent_metrics.h"
++#include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_delegate.h"
+ #include "google_apis/gaia/gaia_auth_util.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "ui/base/page_transition_types.h"
+ #include "ui/base/webui/web_ui_util.h"
+ #include "ui/gfx/image/image.h"
++#include "url/gurl.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_features.h"
+@@ -494,36 +497,15 @@
+ }
+ 
+ void PeopleHandler::DisplayGaiaLoginInNewTabOrWindow(
+-    signin_metrics::AccessPoint access_point) {
+-  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
+-
+-  syncer::SyncService* service = GetSyncService();
+-  if (service && service->HasUnrecoverableError() &&
+-      identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+-    // When the user has an unrecoverable error, they first have to sign out and
+-    // then sign in again.
+-    // Note: this sets the consent level to `signin::ConsentLevel::kSignin`.
+-    identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
+-        signin_metrics::ProfileSignout::kRevokeSyncFromSettings);
+-    DCHECK(identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+-  }
+-
+-  // If the identity manager already has a primary account, this is a
+-  // re-auth scenario, and we need to ensure that the user signs in with the
+-  // same email address.
+-  if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync) ||
+-      signin_util::IsSigninPending(identity_manager)) {
+-    SigninErrorController* error_controller =
+-        SigninErrorControllerFactory::GetForProfile(profile_);
+-    DCHECK(error_controller->HasError());
+-    signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(profile_,
+-                                                             access_point);
+-    return;
+-  }
+-
+-  DCHECK(IsChangePrimaryAccountAllowed(profile_, /*email=*/std::string()))
+-      << "Primary account already set and change is not allowed";
+-  signin_ui_util::EnableSyncFromSingleAccountPromo(profile_, CoreAccountInfo(),
+-                                                   access_point);
++    signin_metrics::AccessPoint /*access_point*/) {
++  // The BYOD build uses Connect for browser sign-in. Navigate the existing
++  // settings tab to the browser-owned login surface so Connect's host-only
++  // cookie is stored in this profile and can be reused by exam OIDC.
++  web_ui()->GetWebContents()->OpenURL(
++      content::OpenURLParams(
++          GURL("grips://login/"), content::Referrer(),
++          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++          /*is_renderer_initiated=*/false),
++      base::NullCallback());
+ }
+ #endif  // !BUILDFLAG(IS_CHROMEOS)

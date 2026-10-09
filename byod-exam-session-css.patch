@@ -1,0 +1,29 @@
+diff --git a/chrome/browser/resources/grips/grips.css b/chrome/browser/resources/grips/grips.css
+--- a/chrome/browser/resources/grips/grips.css
++++ b/chrome/browser/resources/grips/grips.css
+@@ -84,6 +84,25 @@ code {
+   overflow-wrap: anywhere;
+ }
++
++.actions {
++  display: flex;
++  gap: 12px;
++  margin-top: 24px;
++}
++
++button {
++  background: var(--primary);
++  border: 0;
++  border-radius: 8px;
++  color: white;
++  cursor: pointer;
++  font: inherit;
++  font-weight: 650;
++  padding: 10px 16px;
++}
++
++button#end {
++  background: transparent;
++  border: 1px solid var(--border);
++  color: var(--foreground);
++}

@@ -1,0 +1,6 @@
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
+--- a/chrome/browser/chrome_browser_interface_binders_webui.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
+@@ -322 +322 @@
+-#if BUILDFLAG(IS_ANDROID) &&        \
++#if BUILDFLAG(IS_ANDROID) && \

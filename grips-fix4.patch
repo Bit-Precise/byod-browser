@@ -1,0 +1,32 @@
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+--- a/chrome/browser/ui/webui/grips/grips_page_handlers.cc
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -8,12 +8,12 @@
+ #include <vector>
+ 
+ #include "base/functional/bind.h"
++#include "base/strings/escape.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_util.h"
+ #include "base/values.h"
+ #include "content/public/browser/page_navigator.h"
+ #include "content/public/browser/web_contents.h"
+-#include "net/base/escape.h"
+ #include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
+@@ -164,7 +164,7 @@ void LoginPageHandler::OpenOidcLogin(
+     return;
+   }
+   GURL url = client_.server_origin().Resolve(base::StrCat(
+-      {"/api/auth/oidc/", net::EscapePath(provider), "/login"}));
++      {"/api/auth/oidc/", base::EscapePath(provider), "/login"}));
+   content::OpenURLParams params(url, content::Referrer(),
+                                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
+@@ -241,7 +241,7 @@ void WorkspacesPageHandler::ListConnectors(
+     return;
+   }
+   client_.Get(
+-      base::StrCat({"/api/workspaces/", net::EscapePath(workspace_id),
++      base::StrCat({"/api/workspaces/", base::EscapePath(workspace_id),
+                     "/executors"}),
+       base::BindOnce(&WorkspacesPageHandler::OnListConnectors,

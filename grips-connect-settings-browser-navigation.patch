@@ -1,0 +1,18 @@
+diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
+--- a/chrome/browser/resources/settings/people_page/people_page.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.ts
+@@ -395,10 +395,11 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   }
+ 
+   /** Opens the BYOD Connect login page in this settings tab. */
+   private onConnectLoginClick_() {
+-    // Use a top-level navigation in the current tab. This keeps Connect's
+-    // host-only cookie in the active profile for subsequent exam OIDC SSO.
+-    window.location.href = 'grips://login/';
++    // Ask the browser process to navigate. A renderer-initiated transition
++    // from chrome://settings to the custom grips:// scheme is blocked by the
++    // child-process security policy and becomes about:blank#blocked.
++    this.syncBrowserProxy_.startSignIn(ChromeSigninAccessPoint.SETTINGS);
+   }
+ 
+   private onGoogleServicesClick_() {

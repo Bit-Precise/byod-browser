@@ -1,0 +1,11 @@
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -209,7 +209,7 @@
+ namespace {
+ 
+-void OpenGripsLogin(Browser* browser) {
++void OpenGripsLogin(BrowserWindowInterface* browser) {
+   browser->OpenURL(
+       content::OpenURLParams(
+           GURL("grips://login/"), content::Referrer(),
+           WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,

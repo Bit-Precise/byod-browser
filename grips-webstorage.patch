@@ -1,0 +1,8 @@
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -227,2 +227,4 @@ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+   // chrome-search: resources shouldn't trigger insecure content warnings.
+   schemes->secure_schemes.push_back(chrome::kChromeSearchScheme);
++  // Persist the short-lived session token across the OIDC round trip.
++  url::AddWebStorageScheme(chrome::kGripsScheme);

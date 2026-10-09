@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: byod-xhttp-smoke-20261007
+  namespace: byod
+  labels:
+    app: byod-xhttp-smoke-20261007
+spec:
+  activeDeadlineSeconds: 1800
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: echo
+      image: registry.nj.cs.ac.cn/dockerhub/python:3.12-alpine
+      command: [python3, -u, -c]
+      args:
+        - |
+          import socketserver
+          class Echo(socketserver.BaseRequestHandler):
+              def handle(self):
+                  while True:
+                      data = self.request.recv(65536)
+                      if not data: return
+                      self.request.sendall(data)
+          socketserver.ThreadingTCPServer(('0.0.0.0', 9000), Echo).serve_forever()
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 200m, memory: 64Mi}
+      readinessProbe:
+        tcpSocket: {port: 9000}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: byod-xhttp-smoke-20261007
+  namespace: byod
+spec:
+  selector:
+    app: byod-xhttp-smoke-20261007
+  ports:
+    - port: 9000
+      targetPort: 9000

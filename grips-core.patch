@@ -1,0 +1,1817 @@
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+index 605966d..4267ddb 100644
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -192,6 +192,7 @@ static const char* const kChromeStandardURLSchemes[] = {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS)
+     chrome::kChromeNativeScheme,        chrome::kChromeSearchScheme,
++    chrome::kGripsScheme,
+     dom_distiller::kDomDistillerScheme,
+ #if BUILDFLAG(IS_ANDROID)
+     content::kAndroidAppScheme,
+@@ -226,6 +227,10 @@ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+   // chrome-search: resources shouldn't trigger insecure content warnings.
+   schemes->secure_schemes.push_back(chrome::kChromeSearchScheme);
+ 
++  // grips: resources are packaged with the browser and served through the
++  // WebUI URL loader. Network access is brokered by the browser process.
++  schemes->secure_schemes.push_back(chrome::kGripsScheme);
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Treat extensions as secure because communication with them is entirely in
+   // the browser, so there is no danger of manipulation or eavesdropping on
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 7240a4f..b95cd3d 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -2230,6 +2230,7 @@ void ChromeContentBrowserClient::GetAdditionalWebUISchemes(
+   additional_schemes->emplace_back(chrome::kChromeSearchScheme);
+   additional_schemes->emplace_back(dom_distiller::kDomDistillerScheme);
+   additional_schemes->emplace_back(content::kChromeDevToolsScheme);
++  additional_schemes->emplace_back(chrome::kGripsScheme);
+ }
+ 
+ bool ChromeContentBrowserClient::IsInternalScheme(const GURL& url) {
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+index ba0f9ab..07274bb 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+@@ -76,2 +76,3 @@
+ #include "chrome/browser/ui/webui/history/history_ui.h"
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
+ #include "chrome/browser/ui/webui/management/management_ui.h"
+@@ -161,6 +162,17 @@ WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
+                                              const GURL& url) {
++  if (url.SchemeIs(chrome::kGripsScheme)) {
++    if (url.host() == chrome::kGripsLoginHost) {
++      return &NewWebUI<GripsLoginUI>;
++    }
++    if (url.host() == chrome::kGripsWorkspacesHost) {
++      return &NewWebUI<GripsWorkspacesUI>;
++    }
++    return nullptr;
++  }
++
+   // This will get called a lot to check all URLs, so do a quick check of other
+   // schemes to filter out most URLs.
+ #if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)
+diff --git a/chrome/browser/ui/webui/grips/BUILD.gn b/chrome/browser/ui/webui/grips/BUILD.gn
+new file mode 100644
+index 0000000..2f48287
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/BUILD.gn
+@@ -0,0 +1,44 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//mojo/public/tools/bindings/mojom.gni")
++
++mojom("mojo_bindings") {
++  sources = [ "grips.mojom" ]
++  webui_module_path = "/"
++}
++
++source_set("grips") {
++  sources = [
++    "grips_agentserver_client.cc",
++    "grips_agentserver_client.h",
++    "grips_page_handlers.cc",
++    "grips_page_handlers.h",
++    "grips_ui.cc",
++    "grips_ui.h",
++  ]
++
++  public_deps = [
++    ":mojo_bindings",
++    "//content/public/browser",
++    "//mojo/public/cpp/bindings",
++    "//ui/webui",
++  ]
++
++  deps = [
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/grips:resources",
++    "//chrome/common",
++    "//content/public/browser",
++    "//net",
++    "//services/network/public/cpp",
++    "//services/network/public/mojom",
++    "//ui/base",
++    "//url",
++  ]
++}
++
+diff --git a/chrome/browser/ui/webui/grips/grips.mojom b/chrome/browser/ui/webui/grips/grips.mojom
+new file mode 100644
+index 0000000..10e6695
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips.mojom
+@@ -0,0 +1,72 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++module grips.mojom;
++
++struct ApiError {
++  int32 status;
++  string message;
++};
++
++struct LoginConfig {
++  array<string> providers;
++  bool password_auth;
++  string server_origin;
++};
++
++struct Workspace {
++  string id;
++  string name;
++  string created_at;
++  string updated_at;
++};
++
++struct Connector {
++  string exe_id;
++  string name;
++  string description;
++  bool is_default;
++  bool is_online;
++  string last_seen_at;
++  string client_ip;
++  string os;
++  string codex_version;
++  string connected_at;
++  string disconnected_at;
++};
++
++interface LoginPageHandlerFactory {
++  CreatePageHandler(pending_receiver<LoginPageHandler> handler);
++};
++
++interface LoginPageHandler {
++  GetLoginConfig() => (LoginConfig config, ApiError? error);
++  CheckSession() =>
++      (bool authenticated, string email, ApiError? error);
++  Login(string email, string password) => (ApiError? error);
++  OpenOidcLogin(string provider) => (ApiError? error);
++};
++
++interface WorkspacesPageHandlerFactory {
++  CreatePageHandler(pending_receiver<WorkspacesPageHandler> handler);
++};
++
++interface WorkspacesPageHandler {
++  ListWorkspaces() => (array<Workspace> workspaces, ApiError? error);
++  ListConnectors(string workspace_id) =>
++      (array<Connector> connectors, ApiError? error);
++  Logout() => (ApiError? error);
++};
+diff --git a/chrome/browser/ui/webui/grips/grips_agentserver_client.h b/chrome/browser/ui/webui/grips/grips_agentserver_client.h
+new file mode 100644
+index 0000000..5651bbc
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_agentserver_client.h
+@@ -0,0 +1,71 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_AGENTSERVER_CLIENT_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_AGENTSERVER_CLIENT_H_
++
++#include <map>
++#include <memory>
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "base/functional/callback_forward.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/values.h"
++#include "url/gurl.h"
++
++class Profile;
++
++namespace network {
++class SharedURLLoaderFactory;
++class SimpleURLLoader;
++}  // namespace network
++
++namespace grips {
++
++class AgentServerClient {
++ public:
++  struct Response {
++    Response();
++    Response(Response&&);
++    Response& operator=(Response&&);
++    ~Response();
++
++    int http_status = 0;
++    std::optional<base::Value> body;
++    std::string error;
++  };
++
++  using ResponseCallback = base::OnceCallback<void(Response)>;
++
++  explicit AgentServerClient(Profile* profile);
++  AgentServerClient(const AgentServerClient&) = delete;
++  AgentServerClient& operator=(const AgentServerClient&) = delete;
++  ~AgentServerClient();
++
++  const GURL& server_origin() const { return server_origin_; }
++
++  void Get(std::string_view path, ResponseCallback callback);
++  void Post(std::string_view path,
++            base::Value::Dict body,
++            ResponseCallback callback);
++  void PostEmpty(std::string_view path, ResponseCallback callback);
++
++ private:
++  void StartRequest(std::string method,
++                    std::string_view path,
++                    std::optional<std::string> upload_body,
++                    ResponseCallback callback);
++  void OnRequestComplete(network::SimpleURLLoader* loader,
++                         ResponseCallback callback,
++                         std::optional<std::string> body);
++
++  GURL server_origin_;
++  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
++  std::map<network::SimpleURLLoader*,
++           std::unique_ptr<network::SimpleURLLoader>>
++      loaders_;
++};
++
++}  // namespace grips
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_AGENTSERVER_CLIENT_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_agentserver_client.cc b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+new file mode 100644
+index 0000000..e6388aa
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_agentserver_client.cc
+@@ -0,0 +1,174 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_agentserver_client.h"
++
++#include <utility>
++
++#include "base/command_line.h"
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_util.h"
++#include "base/time/time.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/url_constants.h"
++#include "content/public/browser/storage_partition.h"
++#include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
++#include "net/cookies/site_for_cookies.h"
++#include "net/http/http_request_headers.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "url/origin.h"
++#include "url/url_constants.h"
++
++namespace grips {
++namespace {
++
++constexpr char kServerUrlSwitch[] = "grips-server-url";
++constexpr int64_t kMaxResponseBytes = 1024 * 1024;
++constexpr base::TimeDelta kRequestTimeout = base::Seconds(30);
++
++GURL GetConfiguredServerOrigin() {
++  GURL configured(chrome::kGripsDefaultServerUrl);
++  const std::string override_url =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          kServerUrlSwitch);
++  if (!override_url.empty()) {
++    GURL candidate(override_url);
++    if (candidate.is_valid() && candidate.SchemeIs(url::kHttpsScheme) &&
++        !candidate.has_username() && !candidate.has_password()) {
++      configured = candidate;
++    }
++  }
++  return url::Origin::Create(configured).GetURL();
++}
++
++const net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("grips_agentserver_client", R"(
++      semantics {
++        sender: "Grips AgentServer Client"
++        description:
++          "Connects the built-in grips pages to the user's configured "
++          "AgentServer in order to authenticate and manage workspaces and "
++          "connectors."
++        trigger:
++          "The user opens a grips page or performs an action on that page."
++        data:
++          "The user's AgentServer session cookie and data explicitly entered "
++          "or requested by the user, such as login credentials, workspace "
++          "identifiers, and connector metadata."
++        destination: OTHER
++      }
++      policy {
++        cookies_allowed: YES
++        cookies_store: "user"
++        setting:
++          "This feature is only used when the user opens a grips page. The "
++          "AgentServer endpoint can be configured by the browser distributor."
++        policy_exception_justification:
++          "No enterprise policy is available in the first implementation."
++      })");
++
++}  // namespace
++
++AgentServerClient::Response::Response() = default;
++AgentServerClient::Response::Response(Response&&) = default;
++AgentServerClient::Response& AgentServerClient::Response::operator=(
++    Response&&) = default;
++AgentServerClient::Response::~Response() = default;
++
++AgentServerClient::AgentServerClient(Profile* profile)
++    : server_origin_(GetConfiguredServerOrigin()),
++      url_loader_factory_(profile->GetDefaultStoragePartition()
++                              ->GetURLLoaderFactoryForBrowserProcess()) {}
++
++AgentServerClient::~AgentServerClient() = default;
++
++void AgentServerClient::Get(std::string_view path,
++                            ResponseCallback callback) {
++  StartRequest("GET", path, std::nullopt, std::move(callback));
++}
++
++void AgentServerClient::Post(std::string_view path,
++                             base::Value::Dict body,
++                             ResponseCallback callback) {
++  std::string json;
++  base::JSONWriter::Write(body, &json);
++  StartRequest("POST", path, std::move(json), std::move(callback));
++}
++
++void AgentServerClient::PostEmpty(std::string_view path,
++                                  ResponseCallback callback) {
++  StartRequest("POST", path, std::nullopt, std::move(callback));
++}
++
++void AgentServerClient::StartRequest(
++    std::string method,
++    std::string_view path,
++    std::optional<std::string> upload_body,
++    ResponseCallback callback) {
++  GURL request_url = server_origin_.Resolve(path);
++  if (!request_url.is_valid() ||
++      url::Origin::Create(request_url) != url::Origin::Create(server_origin_)) {
++    Response response;
++    response.error = "Invalid AgentServer request URL";
++    std::move(callback).Run(std::move(response));
++    return;
++  }
++
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = request_url;
++  request->method = std::move(method);
++  request->load_flags = net::LOAD_DISABLE_CACHE;
++  request->credentials_mode = network::mojom::CredentialsMode::kInclude;
++  request->redirect_mode = network::mojom::RedirectMode::kError;
++  request->site_for_cookies = net::SiteForCookies::FromUrl(server_origin_);
++  request->request_initiator = url::Origin::Create(
++      GURL("grips://workspaces"));
++  request->headers.SetHeader(net::HttpRequestHeaders::kAccept,
++                             "application/json");
++
++  auto loader = network::SimpleURLLoader::Create(std::move(request),
++                                                  kTrafficAnnotation);
++  loader->SetAllowHttpErrorResults(true);
++  loader->SetTimeoutDuration(kRequestTimeout);
++  if (upload_body.has_value()) {
++    loader->AttachStringForUpload(std::move(*upload_body),
++                                  "application/json");
++  }
++
++  network::SimpleURLLoader* raw_loader = loader.get();
++  loaders_.emplace(raw_loader, std::move(loader));
++  raw_loader->DownloadToString(
++      url_loader_factory_.get(),
++      base::BindOnce(&AgentServerClient::OnRequestComplete,
++                     base::Unretained(this), raw_loader,
++                     std::move(callback)),
++      kMaxResponseBytes);
++}
++
++void AgentServerClient::OnRequestComplete(
++    network::SimpleURLLoader* raw_loader,
++    ResponseCallback callback,
++    std::optional<std::string> body) {
++  auto it = loaders_.find(raw_loader);
++  CHECK(it != loaders_.end());
++  std::unique_ptr<network::SimpleURLLoader> loader = std::move(it->second);
++  loaders_.erase(it);
++
++  Response response;
++  if (loader->ResponseInfo() && loader->ResponseInfo()->headers) {
++    response.http_status = loader->ResponseInfo()->headers->response_code();
++  }
++  if (loader->NetError() != net::OK) {
++    response.error = net::ErrorToString(loader->NetError());
++    std::move(callback).Run(std::move(response));
++    return;
++  }
++
++  if (body.has_value() && !body->empty()) {
++    response.body = base::JSONReader::Read(*body);
++    if (!response.body.has_value()) {
++      if (response.http_status >= 200 && response.http_status < 300) {
++        response.error = "AgentServer returned invalid JSON";
++      } else {
++        response.error = base::CollapseWhitespaceASCII(*body, true);
++        if (response.error.size() > 512) {
++          response.error.resize(512);
++        }
++      }
++    }
++  }
++  std::move(callback).Run(std::move(response));
++}
++
++}  // namespace grips
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.h b/chrome/browser/ui/webui/grips/grips_page_handlers.h
+new file mode 100644
+index 0000000..d9181a0
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.h
+@@ -0,0 +1,94 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_PAGE_HANDLERS_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_PAGE_HANDLERS_H_
++
++#include <memory>
++#include <string>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "chrome/browser/ui/webui/grips/grips.mojom.h"
++#include "chrome/browser/ui/webui/grips/grips_agentserver_client.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++
++class Profile;
++
++namespace content {
++class WebContents;
++}  // namespace content
++
++namespace grips {
++
++class LoginPageHandler : public mojom::LoginPageHandler {
++ public:
++  LoginPageHandler(
++      mojo::PendingReceiver<mojom::LoginPageHandler> receiver,
++      Profile* profile,
++      content::WebContents* web_contents);
++  LoginPageHandler(const LoginPageHandler&) = delete;
++  LoginPageHandler& operator=(const LoginPageHandler&) = delete;
++  ~LoginPageHandler() override;
++
++  void GetLoginConfig(GetLoginConfigCallback callback) override;
++  void CheckSession(CheckSessionCallback callback) override;
++  void Login(const std::string& email,
++             const std::string& password,
++             LoginCallback callback) override;
++  void OpenOidcLogin(const std::string& provider,
++                     OpenOidcLoginCallback callback) override;
++
++ private:
++  void OnLoginConfig(GetLoginConfigCallback callback,
++                     AgentServerClient::Response response);
++  void OnAuthCheck(CheckSessionCallback callback,
++                   AgentServerClient::Response response);
++  void OnCurrentUser(CheckSessionCallback callback,
++                     AgentServerClient::Response response);
++  void OnLogin(LoginCallback callback, AgentServerClient::Response response);
++
++  raw_ptr<content::WebContents> web_contents_;
++  AgentServerClient client_;
++  mojo::Receiver<mojom::LoginPageHandler> receiver_;
++  base::WeakPtrFactory<LoginPageHandler> weak_ptr_factory_{this};
++};
++
++class WorkspacesPageHandler : public mojom::WorkspacesPageHandler {
++ public:
++  WorkspacesPageHandler(
++      mojo::PendingReceiver<mojom::WorkspacesPageHandler> receiver,
++      Profile* profile);
++  WorkspacesPageHandler(const WorkspacesPageHandler&) = delete;
++  WorkspacesPageHandler& operator=(const WorkspacesPageHandler&) = delete;
++  ~WorkspacesPageHandler() override;
++
++  void ListWorkspaces(ListWorkspacesCallback callback) override;
++  void ListConnectors(const std::string& workspace_id,
++                      ListConnectorsCallback callback) override;
++  void Logout(LogoutCallback callback) override;
++
++ private:
++  void OnListWorkspaces(ListWorkspacesCallback callback,
++                        AgentServerClient::Response response);
++  void OnListConnectors(ListConnectorsCallback callback,
++                        AgentServerClient::Response response);
++  void OnLogout(LogoutCallback callback,
++                AgentServerClient::Response response);
++
++  AgentServerClient client_;
++  mojo::Receiver<mojom::WorkspacesPageHandler> receiver_;
++  base::WeakPtrFactory<WorkspacesPageHandler> weak_ptr_factory_{this};
++};
++
++}  // namespace grips
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_PAGE_HANDLERS_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_page_handlers.cc b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+new file mode 100644
+index 0000000..0f1610f
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_page_handlers.cc
+@@ -0,0 +1,280 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_page_handlers.h"
++
++#include <utility>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
++#include "base/values.h"
++#include "content/public/browser/open_url_params.h"
++#include "content/public/browser/web_contents.h"
++#include "net/base/escape.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition.h"
++
++namespace grips {
++namespace {
++
++bool IsSuccessful(const AgentServerClient::Response& response) {
++  return response.error.empty() && response.http_status >= 200 &&
++         response.http_status < 300;
++}
++
++mojom::ApiErrorPtr MakeError(const AgentServerClient::Response& response,
++                             std::string_view fallback) {
++  auto error = mojom::ApiError::New();
++  error->status = response.http_status;
++  error->message = response.error.empty() ? std::string(fallback)
++                                           : response.error;
++  return error;
++}
++
++std::string StringField(const base::Value::Dict& value,
++                        std::string_view key) {
++  const std::string* result = value.FindString(key);
++  return result ? *result : std::string();
++}
++
++bool IsSafeIdentifier(std::string_view value) {
++  if (value.empty() || value.size() > 128) {
++    return false;
++  }
++  for (char c : value) {
++    if (!base::IsAsciiAlphaNumeric(c) && c != '-' && c != '_' && c != '.') {
++      return false;
++    }
++  }
++  return true;
++}
++
++}  // namespace
++
++LoginPageHandler::LoginPageHandler(
++    mojo::PendingReceiver<mojom::LoginPageHandler> receiver,
++    Profile* profile,
++    content::WebContents* web_contents)
++    : web_contents_(web_contents),
++      client_(profile),
++      receiver_(this, std::move(receiver)) {}
++
++LoginPageHandler::~LoginPageHandler() = default;
++
++void LoginPageHandler::GetLoginConfig(GetLoginConfigCallback callback) {
++  client_.Get("/api/auth/oidc/providers",
++              base::BindOnce(&LoginPageHandler::OnLoginConfig,
++                             weak_ptr_factory_.GetWeakPtr(),
++                             std::move(callback)));
++}
++
++void LoginPageHandler::OnLoginConfig(
++    GetLoginConfigCallback callback,
++    AgentServerClient::Response response) {
++  auto config = mojom::LoginConfig::New();
++  config->server_origin = client_.server_origin().spec();
++  if (!IsSuccessful(response) || !response.body ||
++      !response.body->is_dict()) {
++    std::move(callback).Run(
++        std::move(config),
++        MakeError(response, "Failed to load login configuration"));
++    return;
++  }
++
++  const base::Value::Dict& body = response.body->GetDict();
++  config->password_auth = body.FindBool("password_auth").value_or(false);
++  if (const base::Value::List* providers = body.FindList("providers")) {
++    for (const base::Value& provider : *providers) {
++      if (provider.is_string()) {
++        config->providers.push_back(provider.GetString());
++      }
++    }
++  }
++  std::move(callback).Run(std::move(config), nullptr);
++}
++
++void LoginPageHandler::CheckSession(CheckSessionCallback callback) {
++  client_.Get("/api/auth/check",
++              base::BindOnce(&LoginPageHandler::OnAuthCheck,
++                             weak_ptr_factory_.GetWeakPtr(),
++                             std::move(callback)));
++}
++
++void LoginPageHandler::OnAuthCheck(
++    CheckSessionCallback callback,
++    AgentServerClient::Response response) {
++  if (response.http_status == 401) {
++    std::move(callback).Run(false, std::string(), nullptr);
++    return;
++  }
++  if (!IsSuccessful(response)) {
++    std::move(callback).Run(
++        false, std::string(),
++        MakeError(response, "Failed to check AgentServer session"));
++    return;
++  }
++  client_.Get("/api/auth/me",
++              base::BindOnce(&LoginPageHandler::OnCurrentUser,
++                             weak_ptr_factory_.GetWeakPtr(),
++                             std::move(callback)));
++}
++
++void LoginPageHandler::OnCurrentUser(
++    CheckSessionCallback callback,
++    AgentServerClient::Response response) {
++  if (!IsSuccessful(response) || !response.body ||
++      !response.body->is_dict()) {
++    std::move(callback).Run(
++        false, std::string(),
++        MakeError(response, "Failed to load current user"));
++    return;
++  }
++  std::move(callback).Run(
++      true, StringField(response.body->GetDict(), "email"), nullptr);
++}
++
++void LoginPageHandler::Login(const std::string& email,
++                             const std::string& password,
++                             LoginCallback callback) {
++  if (email.empty() || password.empty() || email.size() > 320 ||
++      password.size() > 4096) {
++    auto error = mojom::ApiError::New();
++    error->status = 400;
++    error->message = "Email and password are required";
++    std::move(callback).Run(std::move(error));
++    return;
++  }
++  base::Value::Dict body;
++  body.Set("email", email);
++  body.Set("password", password);
++  client_.Post("/api/auth/login", std::move(body),
++               base::BindOnce(&LoginPageHandler::OnLogin,
++                              weak_ptr_factory_.GetWeakPtr(),
++                              std::move(callback)));
++}
++
++void LoginPageHandler::OnLogin(LoginCallback callback,
++                               AgentServerClient::Response response) {
++  if (!IsSuccessful(response)) {
++    std::move(callback).Run(MakeError(response, "Login failed"));
++    return;
++  }
++  std::move(callback).Run(nullptr);
++}
++
++void LoginPageHandler::OpenOidcLogin(
++    const std::string& provider,
++    OpenOidcLoginCallback callback) {
++  if (!IsSafeIdentifier(provider) || provider.size() > 64) {
++    auto error = mojom::ApiError::New();
++    error->status = 400;
++    error->message = "Invalid identity provider";
++    std::move(callback).Run(std::move(error));
++    return;
++  }
++  GURL url = client_.server_origin().Resolve(base::StrCat(
++      {"/api/auth/oidc/", net::EscapePath(provider), "/login"}));
++  content::OpenURLParams params(url, content::Referrer(),
++                                WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                                ui::PAGE_TRANSITION_LINK,
++                                /*is_renderer_initiated=*/false);
++  web_contents_->OpenURL(params, {});
++  std::move(callback).Run(nullptr);
++}
++
++WorkspacesPageHandler::WorkspacesPageHandler(
++    mojo::PendingReceiver<mojom::WorkspacesPageHandler> receiver,
++    Profile* profile)
++    : client_(profile), receiver_(this, std::move(receiver)) {}
++
++WorkspacesPageHandler::~WorkspacesPageHandler() = default;
++
++void WorkspacesPageHandler::ListWorkspaces(
++    ListWorkspacesCallback callback) {
++  client_.Get("/api/workspaces",
++              base::BindOnce(&WorkspacesPageHandler::OnListWorkspaces,
++                             weak_ptr_factory_.GetWeakPtr(),
++                             std::move(callback)));
++}
++
++void WorkspacesPageHandler::OnListWorkspaces(
++    ListWorkspacesCallback callback,
++    AgentServerClient::Response response) {
++  std::vector<mojom::WorkspacePtr> result;
++  if (!IsSuccessful(response) || !response.body ||
++      !response.body->is_list()) {
++    std::move(callback).Run(
++        std::move(result),
++        MakeError(response, "Failed to load workspaces"));
++    return;
++  }
++  for (const base::Value& item : response.body->GetList()) {
++    if (!item.is_dict()) {
++      continue;
++    }
++    const base::Value::Dict& value = item.GetDict();
++    std::string id = StringField(value, "id");
++    if (id.empty()) {
++      continue;
++    }
++    auto workspace = mojom::Workspace::New();
++    workspace->id = std::move(id);
++    workspace->name = StringField(value, "name");
++    workspace->created_at = StringField(value, "created_at");
++    workspace->updated_at = StringField(value, "updated_at");
++    result.push_back(std::move(workspace));
++  }
++  std::move(callback).Run(std::move(result), nullptr);
++}
++
++void WorkspacesPageHandler::ListConnectors(
++    const std::string& workspace_id,
++    ListConnectorsCallback callback) {
++  if (!IsSafeIdentifier(workspace_id)) {
++    auto error = mojom::ApiError::New();
++    error->status = 400;
++    error->message = "Invalid workspace identifier";
++    std::move(callback).Run({}, std::move(error));
++    return;
++  }
++  client_.Get(
++      base::StrCat({"/api/workspaces/", net::EscapePath(workspace_id),
++                    "/executors"}),
++      base::BindOnce(&WorkspacesPageHandler::OnListConnectors,
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++}
++
++void WorkspacesPageHandler::OnListConnectors(
++    ListConnectorsCallback callback,
++    AgentServerClient::Response response) {
++  std::vector<mojom::ConnectorPtr> result;
++  if (!IsSuccessful(response) || !response.body ||
++      !response.body->is_list()) {
++    std::move(callback).Run(
++        std::move(result),
++        MakeError(response, "Failed to load connectors"));
++    return;
++  }
++  for (const base::Value& item : response.body->GetList()) {
++    if (!item.is_dict()) {
++      continue;
++    }
++    const base::Value::Dict& value = item.GetDict();
++    std::string exe_id = StringField(value, "exe_id");
++    if (exe_id.empty()) {
++      continue;
++    }
++    auto connector = mojom::Connector::New();
++    connector->exe_id = std::move(exe_id);
++    connector->name = StringField(value, "name");
++    connector->description = StringField(value, "description");
++    connector->is_default = value.FindBool("is_default").value_or(false);
++    connector->is_online = value.FindBool("is_online").value_or(false);
++    connector->last_seen_at = StringField(value, "last_seen_at");
++    connector->client_ip = StringField(value, "client_ip");
++    connector->os = StringField(value, "os");
++    connector->codex_version = StringField(value, "codex_version");
++    connector->connected_at = StringField(value, "connected_at");
++    connector->disconnected_at = StringField(value, "disconnected_at");
++    result.push_back(std::move(connector));
++  }
++  std::move(callback).Run(std::move(result), nullptr);
++}
++
++void WorkspacesPageHandler::Logout(LogoutCallback callback) {
++  client_.PostEmpty(
++      "/api/auth/logout",
++      base::BindOnce(&WorkspacesPageHandler::OnLogout,
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++}
++
++void WorkspacesPageHandler::OnLogout(
++    LogoutCallback callback,
++    AgentServerClient::Response response) {
++  if (!IsSuccessful(response)) {
++    std::move(callback).Run(MakeError(response, "Logout failed"));
++    return;
++  }
++  std::move(callback).Run(nullptr);
++}
++
++}  // namespace grips
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.h b/chrome/browser/ui/webui/grips/grips_ui.h
+new file mode 100644
+index 0000000..3c44432
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.h
+@@ -0,0 +1,83 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
++
++#include <memory>
++
++#include "chrome/browser/ui/webui/grips/grips.mojom.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "ui/webui/mojo_web_ui_controller.h"
++
++namespace grips {
++class LoginPageHandler;
++class WorkspacesPageHandler;
++}  // namespace grips
++
++class GripsLoginUI : public ui::MojoWebUIController,
++                     public grips::mojom::LoginPageHandlerFactory {
++ public:
++  explicit GripsLoginUI(content::WebUI* web_ui);
++  GripsLoginUI(const GripsLoginUI&) = delete;
++  GripsLoginUI& operator=(const GripsLoginUI&) = delete;
++  ~GripsLoginUI() override;
++
++  void BindInterface(
++      mojo::PendingReceiver<grips::mojom::LoginPageHandlerFactory> receiver);
++
++ private:
++  void CreatePageHandler(
++      mojo::PendingReceiver<grips::mojom::LoginPageHandler> handler) override;
++
++  std::unique_ptr<grips::LoginPageHandler> page_handler_;
++  mojo::Receiver<grips::mojom::LoginPageHandlerFactory> factory_receiver_{
++      this};
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++class GripsWorkspacesUI : public ui::MojoWebUIController,
++                          public grips::mojom::WorkspacesPageHandlerFactory {
++ public:
++  explicit GripsWorkspacesUI(content::WebUI* web_ui);
++  GripsWorkspacesUI(const GripsWorkspacesUI&) = delete;
++  GripsWorkspacesUI& operator=(const GripsWorkspacesUI&) = delete;
++  ~GripsWorkspacesUI() override;
++
++  void BindInterface(mojo::PendingReceiver<
++                     grips::mojom::WorkspacesPageHandlerFactory> receiver);
++
++ private:
++  void CreatePageHandler(
++      mojo::PendingReceiver<grips::mojom::WorkspacesPageHandler> handler)
++      override;
++
++  std::unique_ptr<grips::WorkspacesPageHandler> page_handler_;
++  mojo::Receiver<grips::mojom::WorkspacesPageHandlerFactory>
++      factory_receiver_{this};
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+new file mode 100644
+index 0000000..32f30aa
+--- /dev/null
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -0,0 +1,88 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/grips/grips_ui.h"
++
++#include <utility>
++
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/webui/grips/grips_page_handlers.h"
++#include "chrome/common/url_constants.h"
++#include "chrome/grit/grips_resources.h"
++#include "chrome/grit/grips_resources_map.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "services/network/public/mojom/content_security_policy.mojom.h"
++#include "ui/webui/webui_util.h"
++
++namespace {
++
++void SetupSource(Profile* profile, const char* host, int default_resource) {
++  content::WebUIDataSource* source =
++      content::WebUIDataSource::CreateAndAdd(profile, host);
++  source->SetSupportedScheme(chrome::kGripsScheme);
++  webui::SetupWebUIDataSource(source, kGripsResources, default_resource);
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc, "connect-src 'none';");
++}
++
++}  // namespace
++
++GripsLoginUI::GripsLoginUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui) {
++  SetupSource(Profile::FromWebUI(web_ui), chrome::kGripsLoginHost,
++              IDR_GRIPS_LOGIN_HTML);
++}
++
++GripsLoginUI::~GripsLoginUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsLoginUI)
++
++void GripsLoginUI::BindInterface(
++    mojo::PendingReceiver<grips::mojom::LoginPageHandlerFactory> receiver) {
++  factory_receiver_.reset();
++  factory_receiver_.Bind(std::move(receiver));
++}
++
++void GripsLoginUI::CreatePageHandler(
++    mojo::PendingReceiver<grips::mojom::LoginPageHandler> handler) {
++  page_handler_ = std::make_unique<grips::LoginPageHandler>(
++      std::move(handler), Profile::FromWebUI(web_ui()),
++      web_ui()->GetWebContents());
++}
++
++GripsWorkspacesUI::GripsWorkspacesUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui) {
++  SetupSource(Profile::FromWebUI(web_ui), chrome::kGripsWorkspacesHost,
++              IDR_GRIPS_WORKSPACES_HTML);
++}
++
++GripsWorkspacesUI::~GripsWorkspacesUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsWorkspacesUI)
++
++void GripsWorkspacesUI::BindInterface(
++    mojo::PendingReceiver<grips::mojom::WorkspacesPageHandlerFactory>
++        receiver) {
++  factory_receiver_.reset();
++  factory_receiver_.Bind(std::move(receiver));
++}
++
++void GripsWorkspacesUI::CreatePageHandler(
++    mojo::PendingReceiver<grips::mojom::WorkspacesPageHandler> handler) {
++  page_handler_ = std::make_unique<grips::WorkspacesPageHandler>(
++      std::move(handler), Profile::FromWebUI(web_ui()));
++}
+diff --git a/chrome/browser/resources/grips/BUILD.gn b/chrome/browser/resources/grips/BUILD.gn
+new file mode 100644
+index 0000000..ef294d7
+--- /dev/null
++++ b/chrome/browser/resources/grips/BUILD.gn
+@@ -0,0 +1,29 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "grips"
++  static_files = [
++    "grips.css",
++    "login.html",
++    "workspaces.html",
++  ]
++  ts_files = [
++    "login.ts",
++    "workspaces.ts",
++  ]
++  ts_composite = true
++  ts_deps = [
++    "//ui/webui/resources/js:build_ts",
++    "//ui/webui/resources/mojo:build_ts",
++  ]
++  webui_context_type = "trusted"
++
++  mojo_files_deps =
++      [ "//chrome/browser/ui/webui/grips:mojo_bindings_ts__generator" ]
++  mojo_files = [
++    "$root_gen_dir/chrome/browser/ui/webui/grips/grips.mojom-webui.ts",
++  ]
++}
+diff --git a/chrome/browser/resources/grips/login.html b/chrome/browser/resources/grips/login.html
+new file mode 100644
+index 0000000..41a8a31
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.html
+@@ -0,0 +1,38 @@
++<!doctype html>
++<html dir="ltr" lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Sign in to Grips</title>
++    <link rel="stylesheet" href="/grips.css">
++  </head>
++  <body class="login-page">
++    <main class="login-card">
++      <div class="brand">grips</div>
++      <h1>Sign in to AgentServer</h1>
++      <p id="server-origin" class="muted"></p>
++      <div id="error" class="error" hidden></div>
++      <form id="password-form" hidden>
++        <label>
++          Email
++          <input id="email" type="email" autocomplete="username" required>
++        </label>
++        <label>
++          Password
++          <input id="password" type="password" autocomplete="current-password"
++                 required>
++        </label>
++        <button id="login-button" type="submit">Sign in</button>
++      </form>
++      <div id="oidc-section" hidden>
++        <div class="separator"><span>or</span></div>
++        <div id="providers" class="provider-list"></div>
++      </div>
++      <p id="oidc-help" class="muted" hidden>
++        Complete sign-in in the new tab, then return here.
++      </p>
++    </main>
++    <script type="module" src="/login.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/login.ts b/chrome/browser/resources/grips/login.ts
+new file mode 100644
+index 0000000..775df7b
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.ts
+@@ -0,0 +1,116 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++import {LoginPageHandlerFactory, LoginPageHandlerRemote} from './grips.mojom-webui.js';
++
++const handler = new LoginPageHandlerRemote();
++LoginPageHandlerFactory.getRemote().createPageHandler(
++    handler.$.bindNewPipeAndPassReceiver());
++
++const errorBox = document.querySelector<HTMLElement>('#error')!;
++const passwordForm = document.querySelector<HTMLFormElement>('#password-form')!;
++const loginButton = document.querySelector<HTMLButtonElement>('#login-button')!;
++const emailInput = document.querySelector<HTMLInputElement>('#email')!;
++const passwordInput = document.querySelector<HTMLInputElement>('#password')!;
++const oidcSection = document.querySelector<HTMLElement>('#oidc-section')!;
++const providers = document.querySelector<HTMLElement>('#providers')!;
++const oidcHelp = document.querySelector<HTMLElement>('#oidc-help')!;
++const serverOrigin = document.querySelector<HTMLElement>('#server-origin')!;
++
++function showError(message: string) {
++  errorBox.textContent = message;
++  errorBox.hidden = false;
++}
++
++function clearError() {
++  errorBox.textContent = '';
++  errorBox.hidden = true;
++}
++
++async function checkSession() {
++  const {authenticated, error} = await handler.checkSession();
++  if (error && error.status !== 401) {
++    showError(error.message);
++    return;
++  }
++  if (authenticated) {
++    window.location.href = 'grips://workspaces/';
++  }
++}
++
++async function initialize() {
++  const {config, error} = await handler.getLoginConfig();
++  serverOrigin.textContent = `Server: ${config.serverOrigin}`;
++  if (error) {
++    showError(error.message);
++    return;
++  }
++  passwordForm.hidden = !config.passwordAuth;
++  oidcSection.hidden = config.providers.length === 0;
++  for (const provider of config.providers) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.textContent = `Sign in with ${provider}`;
++    button.addEventListener('click', async () => {
++      clearError();
++      const {error} = await handler.openOidcLogin(provider);
++      if (error) {
++        showError(error.message);
++        return;
++      }
++      oidcHelp.hidden = false;
++    });
++    providers.appendChild(button);
++  }
++  await checkSession();
++}
++
++passwordForm.addEventListener('submit', async event => {
++  event.preventDefault();
++  clearError();
++  loginButton.disabled = true;
++  loginButton.textContent = 'Signing in...';
++  const {error} = await handler.login(emailInput.value, passwordInput.value);
++  loginButton.disabled = false;
++  loginButton.textContent = 'Sign in';
++  if (error) {
++    passwordInput.value = '';
++    showError(error.status === 401 ? 'Invalid email or password' : error.message);
++    return;
++  }
++  window.location.href = 'grips://workspaces/';
++});
++
++window.addEventListener('focus', () => {
++  void checkSession();
++});
++document.addEventListener('visibilitychange', () => {
++  if (document.visibilityState === 'visible') {
++    void checkSession();
++  }
++});
++
++void initialize();
+diff --git a/chrome/browser/resources/grips/workspaces.html b/chrome/browser/resources/grips/workspaces.html
+new file mode 100644
+index 0000000..6cdf2e1
+--- /dev/null
++++ b/chrome/browser/resources/grips/workspaces.html
+@@ -0,0 +1,30 @@
++<!doctype html>
++<html dir="ltr" lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Grips Workspaces</title>
++    <link rel="stylesheet" href="/grips.css">
++  </head>
++  <body>
++    <header class="topbar">
++      <div class="brand">grips</div>
++      <button id="logout" class="secondary">Sign out</button>
++    </header>
++    <div class="app-shell">
++      <aside>
++        <div class="aside-title">Workspaces</div>
++        <nav id="workspace-nav"></nav>
++      </aside>
++      <main id="content">
++        <div id="loading" class="empty-state">Loading workspaces...</div>
++        <div id="error" class="error" hidden></div>
++        <section id="workspace-list" hidden></section>
++        <section id="workspace-overview" hidden></section>
++        <section id="connectors-view" hidden></section>
++      </main>
++    </div>
++    <script type="module" src="/workspaces.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/workspaces.ts b/chrome/browser/resources/grips/workspaces.ts
+new file mode 100644
+index 0000000..be57f5d
+--- /dev/null
++++ b/chrome/browser/resources/grips/workspaces.ts
+@@ -0,0 +1,231 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++import type {Connector, Workspace} from './grips.mojom-webui.js';
++import {WorkspacesPageHandlerFactory, WorkspacesPageHandlerRemote} from './grips.mojom-webui.js';
++
++const handler = new WorkspacesPageHandlerRemote();
++WorkspacesPageHandlerFactory.getRemote().createPageHandler(
++    handler.$.bindNewPipeAndPassReceiver());
++
++const loading = document.querySelector<HTMLElement>('#loading')!;
++const errorBox = document.querySelector<HTMLElement>('#error')!;
++const workspaceList = document.querySelector<HTMLElement>('#workspace-list')!;
++const workspaceOverview = document.querySelector<HTMLElement>('#workspace-overview')!;
++const connectorsView = document.querySelector<HTMLElement>('#connectors-view')!;
++const workspaceNav = document.querySelector<HTMLElement>('#workspace-nav')!;
++const logoutButton = document.querySelector<HTMLButtonElement>('#logout')!;
++
++let workspaces: Workspace[] = [];
++let pollTimer: number|undefined;
++
++function showError(message: string, status = 0) {
++  if (status === 401) {
++    window.location.href = 'grips://login/';
++    return;
++  }
++  errorBox.textContent = message;
++  errorBox.hidden = false;
++  loading.hidden = true;
++}
++
++function clearViews() {
++  workspaceList.hidden = true;
++  workspaceOverview.hidden = true;
++  connectorsView.hidden = true;
++  errorBox.hidden = true;
++  if (pollTimer !== undefined) {
++    window.clearInterval(pollTimer);
++    pollTimer = undefined;
++  }
++}
++
++function navigate(path: string, replace = false) {
++  if (replace) {
++    history.replaceState({}, '', path);
++  } else {
++    history.pushState({}, '', path);
++  }
++  void renderRoute();
++}
++
++function workspacePath(workspace: Workspace, suffix = '') {
++  return `/${encodeURIComponent(workspace.id)}${suffix}`;
++}
++
++function renderNav(selectedId?: string) {
++  workspaceNav.replaceChildren();
++  for (const workspace of workspaces) {
++    const button = document.createElement('button');
++    button.className = workspace.id === selectedId ? 'nav-item selected' : 'nav-item';
++    button.textContent = workspace.name || workspace.id;
++    button.addEventListener('click', () => navigate(workspacePath(workspace)));
++    workspaceNav.appendChild(button);
++  }
++}
++
++function renderWorkspaceList() {
++  clearViews();
++  renderNav();
++  workspaceList.hidden = false;
++  workspaceList.replaceChildren();
++
++  const heading = document.createElement('div');
++  heading.className = 'page-heading';
++  const title = document.createElement('h1');
++  title.textContent = 'Workspaces';
++  const subtitle = document.createElement('p');
++  subtitle.className = 'muted';
++  subtitle.textContent = 'Your personal compute networks';
++  heading.append(title, subtitle);
++  workspaceList.appendChild(heading);
++
++  const grid = document.createElement('div');
++  grid.className = 'card-grid';
++  if (workspaces.length === 0) {
++    const empty = document.createElement('div');
++    empty.className = 'empty-state';
++    empty.textContent = 'No workspaces are available for this account.';
++    grid.appendChild(empty);
++  }
++  for (const workspace of workspaces) {
++    const card = document.createElement('button');
++    card.className = 'workspace-card';
++    const name = document.createElement('strong');
++    name.textContent = workspace.name || 'Untitled workspace';
++    const id = document.createElement('span');
++    id.textContent = workspace.id;
++    card.append(name, id);
++    card.addEventListener('click', () => navigate(workspacePath(workspace)));
++    grid.appendChild(card);
++  }
++  workspaceList.appendChild(grid);
++}
++
++function renderOverview(workspace: Workspace) {
++  clearViews();
++  renderNav(workspace.id);
++  workspaceOverview.hidden = false;
++  workspaceOverview.replaceChildren();
++
++  const title = document.createElement('h1');
++  title.textContent = workspace.name;
++  const id = document.createElement('p');
++  id.className = 'muted mono';
++  id.textContent = workspace.id;
++  const actions = document.createElement('div');
++  actions.className = 'card-grid';
++  const connectors = document.createElement('button');
++  connectors.className = 'workspace-card';
++  const label = document.createElement('strong');
++  label.textContent = 'Connectors';
++  const detail = document.createElement('span');
++  detail.textContent = 'Machines exposed to this workspace';
++  connectors.append(label, detail);
++  connectors.addEventListener('click', () =>
++    navigate(workspacePath(workspace, '/connectors')));
++  actions.appendChild(connectors);
++  workspaceOverview.append(title, id, actions);
++}
++
++function connectorCard(connector: Connector) {
++  const card = document.createElement('article');
++  card.className = 'connector-card';
++  const header = document.createElement('div');
++  header.className = 'connector-header';
++  const name = document.createElement('strong');
++  name.textContent = connector.name || connector.exeId;
++  const status = document.createElement('span');
++  status.className = connector.isOnline ? 'status online' : 'status offline';
++  status.textContent = connector.isOnline ? 'Online' : 'Offline';
++  header.append(name, status);
++  const description = document.createElement('p');
++  description.className = 'muted';
++  description.textContent = connector.description || 'No description';
++  const meta = document.createElement('dl');
++  for (const [label, value] of [
++    ['ID', connector.exeId],
++    ['OS', connector.os],
++    ['Codex', connector.codexVersion],
++    ['IP', connector.clientIp],
++    ['Last seen', connector.lastSeenAt],
++  ]) {
++    if (!value) {
++      continue;
++    }
++    const dt = document.createElement('dt');
++    dt.textContent = label;
++    const dd = document.createElement('dd');
++    dd.textContent = value;
++    meta.append(dt, dd);
++  }
++  card.append(header, description, meta);
++  return card;
++}
++
++async function renderConnectors(workspace: Workspace) {
++  clearViews();
++  renderNav(workspace.id);
++  connectorsView.hidden = false;
++  connectorsView.replaceChildren();
++  const heading = document.createElement('div');
++  heading.className = 'page-heading';
++  const title = document.createElement('h1');
++  title.textContent = 'Connectors';
++  const back = document.createElement('button');
++  back.className = 'secondary';
++  back.textContent = 'Workspace overview';
++  back.addEventListener('click', () => navigate(workspacePath(workspace)));
++  heading.append(title, back);
++  const list = document.createElement('div');
++  list.className = 'connector-list';
++  list.textContent = 'Loading connectors...';
++  connectorsView.append(heading, list);
++
++  const refresh = async () => {
++    const {connectors, error} = await handler.listConnectors(workspace.id);
++    if (error) {
++      showError(error.message, error.status);
++      return;
++    }
++    list.replaceChildren();
++    if (connectors.length === 0) {
++      const empty = document.createElement('div');
++      empty.className = 'empty-state';
++      empty.textContent = 'No connectors are registered in this workspace.';
++      list.appendChild(empty);
++      return;
++    }
++    for (const connector of connectors) {
++      list.appendChild(connectorCard(connector));
++    }
++  };
++  await refresh();
++  pollTimer = window.setInterval(() => {
++    if (document.visibilityState === 'visible') {
++      void refresh();
++    }
++  }, 10_000);
++}
++
++async function renderRoute() {
++  const segments = location.pathname.split('/').filter(Boolean)
++      .map(segment => decodeURIComponent(segment));
++  if (segments.length === 0) {
++    renderWorkspaceList();
++    return;
++  }
++  const workspace = workspaces.find(item => item.id === segments[0]);
++  if (!workspace) {
++    showError('Workspace not found');
++    return;
++  }
++  let tab = segments[1] || '';
++  if (tab === 'executors') {
++    tab = 'connectors';
++    navigate(workspacePath(workspace, '/connectors'), true);
++    return;
++  }
++  if (tab === 'connectors') {
++    await renderConnectors(workspace);
++    return;
++  }
++  renderOverview(workspace);
++}
++
++async function initialize() {
++  const response = await handler.listWorkspaces();
++  loading.hidden = true;
++  if (response.error) {
++    showError(response.error.message, response.error.status);
++    return;
++  }
++  workspaces = response.workspaces;
++  await renderRoute();
++}
++
++logoutButton.addEventListener('click', async () => {
++  logoutButton.disabled = true;
++  const {error} = await handler.logout();
++  logoutButton.disabled = false;
++  if (error) {
++    showError(error.message, error.status);
++    return;
++  }
++  window.location.href = 'grips://login/';
++});
++
++window.addEventListener('popstate', () => void renderRoute());
++void initialize();
+diff --git a/chrome/browser/resources/grips/grips.css b/chrome/browser/resources/grips/grips.css
+new file mode 100644
+index 0000000..7f7d56b
+--- /dev/null
++++ b/chrome/browser/resources/grips/grips.css
+@@ -0,0 +1,301 @@
++:root {
++  color-scheme: light dark;
++  --background: light-dark(#f7f8fa, #111317);
++  --card: light-dark(#fff, #1b1e24);
++  --foreground: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #9aa0a6);
++  --border: light-dark(#dadce0, #3c4043);
++  --primary: #4f7cff;
++  --primary-hover: #416ee8;
++  --error-bg: light-dark(#fce8e6, #4c1d1a);
++  --error: light-dark(#a50e0e, #f28b82);
++  font-family: system-ui, sans-serif;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  background: var(--background);
++  color: var(--foreground);
++  margin: 0;
++  min-height: 100vh;
++}
++
++button,
++input {
++  font: inherit;
++}
++
++button {
++  background: var(--primary);
++  border: 0;
++  border-radius: 8px;
++  color: white;
++  cursor: pointer;
++  font-weight: 600;
++  padding: 10px 16px;
++}
++
++button:hover {
++  background: var(--primary-hover);
++}
++
++button:disabled {
++  cursor: default;
++  opacity: .6;
++}
++
++button.secondary {
++  background: transparent;
++  border: 1px solid var(--border);
++  color: var(--foreground);
++}
++
++.brand {
++  font-size: 20px;
++  font-weight: 750;
++  letter-spacing: -.04em;
++}
++
++.muted {
++  color: var(--muted);
++}
++
++.mono {
++  font-family: ui-monospace, monospace;
++}
++
++.error {
++  background: var(--error-bg);
++  border: 1px solid color-mix(in srgb, var(--error), transparent 60%);
++  border-radius: 8px;
++  color: var(--error);
++  margin: 16px 0;
++  padding: 12px 14px;
++}
++
++.login-page {
++  align-items: center;
++  display: flex;
++  justify-content: center;
++  padding: 32px;
++}
++
++.login-card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 16px;
++  box-shadow: 0 16px 40px rgba(0, 0, 0, .15);
++  max-width: 420px;
++  padding: 32px;
++  width: 100%;
++}
++
++.login-card h1 {
++  font-size: 24px;
++  margin: 20px 0 4px;
++}
++
++.login-card form,
++.login-card label {
++  display: grid;
++  gap: 8px;
++}
++
++.login-card form {
++  gap: 16px;
++  margin-top: 24px;
++}
++
++.login-card input {
++  background: var(--background);
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  color: var(--foreground);
++  padding: 11px 12px;
++}
++
++.separator {
++  align-items: center;
++  color: var(--muted);
++  display: flex;
++  gap: 12px;
++  margin: 20px 0;
++}
++
++.separator::before,
++.separator::after {
++  border-top: 1px solid var(--border);
++  content: '';
++  flex: 1;
++}
++
++.provider-list {
++  display: grid;
++  gap: 10px;
++}
++
++.provider-list button {
++  background: transparent;
++  border: 1px solid var(--border);
++  color: var(--foreground);
++}
++
++.topbar {
++  align-items: center;
++  background: var(--card);
++  border-bottom: 1px solid var(--border);
++  display: flex;
++  height: 60px;
++  justify-content: space-between;
++  padding: 0 24px;
++}
++
++.app-shell {
++  display: grid;
++  grid-template-columns: 240px minmax(0, 1fr);
++  height: calc(100vh - 60px);
++}
++
++aside {
++  background: var(--card);
++  border-right: 1px solid var(--border);
++  overflow: auto;
++  padding: 20px 12px;
++}
++
++.aside-title {
++  color: var(--muted);
++  font-size: 12px;
++  font-weight: 700;
++  letter-spacing: .08em;
++  padding: 0 12px 10px;
++  text-transform: uppercase;
++}
++
++#workspace-nav {
++  display: grid;
++  gap: 4px;
++}
++
++.nav-item {
++  background: transparent;
++  color: var(--foreground);
++  overflow: hidden;
++  text-align: left;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.nav-item:hover,
++.nav-item.selected {
++  background: color-mix(in srgb, var(--primary), transparent 84%);
++}
++
++#content {
++  overflow: auto;
++  padding: 32px;
++}
++
++.page-heading {
++  align-items: center;
++  display: flex;
++  justify-content: space-between;
++  margin-bottom: 24px;
++}
++
++.page-heading h1,
++#workspace-overview h1 {
++  margin: 0;
++}
++
++.card-grid {
++  display: grid;
++  gap: 16px;
++  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
++  margin-top: 24px;
++}
++
++.workspace-card {
++  align-items: flex-start;
++  background: var(--card);
++  border: 1px solid var(--border);
++  color: var(--foreground);
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  min-height: 112px;
++  padding: 20px;
++  text-align: left;
++}
++
++.workspace-card:hover {
++  background: color-mix(in srgb, var(--card), var(--primary) 5%);
++  border-color: color-mix(in srgb, var(--primary), var(--border) 45%);
++}
++
++.workspace-card strong {
++  font-size: 17px;
++}
++
++.workspace-card span {
++  color: var(--muted);
++  font-family: ui-monospace, monospace;
++  font-size: 12px;
++}
++
++.connector-list {
++  display: grid;
++  gap: 12px;
++}
++
++.connector-card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 18px;
++}
++
++.connector-header {
++  align-items: center;
++  display: flex;
++  justify-content: space-between;
++}
++
++.status {
++  border-radius: 999px;
++  font-size: 12px;
++  font-weight: 700;
++  padding: 4px 9px;
++}
++
++.status.online {
++  background: light-dark(#e6f4ea, #173b25);
++  color: light-dark(#137333, #81c995);
++}
++
++.status.offline {
++  background: light-dark(#f1f3f4, #303134);
++  color: var(--muted);
++}
++
++.connector-card dl {
++  display: grid;
++  font-size: 13px;
++  gap: 6px 16px;
++  grid-template-columns: max-content 1fr;
++  margin: 14px 0 0;
++}
++
++.connector-card dt {
++  color: var(--muted);
++}
++
++.connector-card dd {
++  margin: 0;
++  overflow-wrap: anywhere;
++}
++
++.empty-state {
++  border: 1px dashed var(--border);
++  border-radius: 10px;
++  color: var(--muted);
++  padding: 40px;
++  text-align: center;
++}
++
++[hidden] {
++  display: none !important;
++}
++
++@media (max-width: 720px) {
++  .app-shell {
++    grid-template-columns: 1fr;
++  }
++
++  aside {
++    border-bottom: 1px solid var(--border);
++    border-right: 0;
++    max-height: 180px;
++  }
++
++  #content {
++    padding: 20px;
++  }
++}

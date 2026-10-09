@@ -1,0 +1,203 @@
+diff --git a/chrome/browser/resources/grips/BUILD.gn b/chrome/browser/resources/grips/BUILD.gn
+--- a/chrome/browser/resources/grips/BUILD.gn
++++ b/chrome/browser/resources/grips/BUILD.gn
+@@ -8,9 +8,10 @@ build_webui("build") {
+   grd_prefix = "grips"
+   static_files = [
+     "exam.html",
+     "grips.css",
++    "login.html",
+   ]
+-  ts_files = [ "exam.ts" ]
++  ts_files = [ "exam.ts", "login.ts" ]
+   ts_composite = true
+   ts_deps = [ "//ui/webui/resources/js:build_ts" ]
+   webui_context_type = "trusted"
+ }
+diff --git a/chrome/browser/resources/grips/login.html b/chrome/browser/resources/grips/login.html
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.html
+@@ -0,0 +1,32 @@
++<!doctype html>
++<html dir="ltr" lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Connect sign-in · BYOD Browser</title>
++    <link rel="stylesheet" href="/grips.css">
++  </head>
++  <body>
++    <main class="exam-card">
++      <div class="header-row">
++        <div class="brand">BYOD Browser</div>
++        <span class="badge">Connect account</span>
++      </div>
++      <h1>Sign in with Connect</h1>
++      <p class="muted">
++        BYOD Browser uses your Connect account for exam authentication. The
++        Connect login page will open in this tab and keep its session in this
++        browser profile.
++      </p>
++      <section class="target-panel">
++        <span class="label">Identity provider</span>
++        <code>https://connect.cs.ac.cn</code>
++      </section>
++      <div class="actions">
++        <button id="login" type="button">Continue with Connect</button>
++      </div>
++      <p id="status" class="muted">Opening Connect…</p>
++    </main>
++    <script type="module" src="/login.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/grips/login.ts b/chrome/browser/resources/grips/login.ts
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/resources/grips/login.ts
+@@ -0,0 +1,33 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++const connectURL = 'https://connect.cs.ac.cn/';
++const button = document.querySelector<HTMLButtonElement>('#login');
++const status = document.querySelector<HTMLElement>('#status');
++
++function openConnect() {
++  // A top-level navigation is intentional: Connect's host-only cookies are
++  // stored in the normal Chromium profile and are then reused by the exam's
++  // standard OIDC authorization-code flow. An iframe would make this a
++  // third-party cookie and would be blocked by modern cookie policies.
++  window.location.replace(connectURL);
++}
++
++button?.addEventListener('click', openConnect);
++
++// Match the browser's normal sign-in affordance: opening grips://login starts
++// the Connect flow immediately, while leaving a button for blocked scripts or
++// users who want to retry after a transient network failure. The `manual`
++// query is used by browser tests to keep the WebUI document committed.
++if (!new URLSearchParams(window.location.search).has('manual')) {
++  window.setTimeout(() => {
++    if (document.visibilityState === 'visible') {
++      openConnect();
++    }
++  }, 100);
++}
++
++if (status) {
++  status.textContent = 'Connect login opens in this tab; after signing in, open an exam link.';
++}
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.h b/chrome/browser/ui/webui/grips/grips_ui.h
+--- a/chrome/browser/ui/webui/grips/grips_ui.h
++++ b/chrome/browser/ui/webui/grips/grips_ui.h
+@@ -17,4 +17,19 @@ class GripsExamUI : public ui::MojoWebUIController {
+   WEB_UI_CONTROLLER_TYPE_DECL();
+ };
++
++// The BYOD account entry point. It is deliberately separate from
++// Chromium's GAIA/Google identity stack: a top-level Connect navigation
++// stores the Connect host-only cookie in the user's normal profile, and the
++// exam later reuses that session through standard OIDC SSO.
++class GripsLoginUI : public ui::MojoWebUIController {
++ public:
++  explicit GripsLoginUI(content::WebUI* web_ui);
++  GripsLoginUI(const GripsLoginUI&) = delete;
++  GripsLoginUI& operator=(const GripsLoginUI&) = delete;
++  ~GripsLoginUI() override;
++
++ private:
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
+ 
+ #endif  // CHROME_BROWSER_UI_WEBUI_GRIPS_GRIPS_UI_H_
+diff --git a/chrome/browser/ui/webui/grips/grips_ui.cc b/chrome/browser/ui/webui/grips/grips_ui.cc
+--- a/chrome/browser/ui/webui/grips/grips_ui.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui.cc
+@@ -486,1 +486,21 @@ WEB_UI_CONTROLLER_TYPE_IMPL(GripsExamUI)
+ WEB_UI_CONTROLLER_TYPE_IMPL(GripsExamUI)
++
++GripsLoginUI::GripsLoginUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/false) {
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      Profile::FromWebUI(web_ui), chrome::kGripsLoginHost);
++  source->SetSupportedScheme(chrome::kGripsScheme);
++  webui::SetupWebUIDataSource(source, kGripsResources,
++                              IDR_GRIPS_LOGIN_HTML);
++
++  // login.ts performs a top-level navigation to Connect. Keep the page's
++  // script and stylesheet scoped to the trusted login origin; Connect itself
++  // is a normal HTTPS page after the navigation commits.
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src grips://login 'self';");
++}
++
++GripsLoginUI::~GripsLoginUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(GripsLoginUI)
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+--- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
+@@ -161,6 +161,9 @@ WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
+   if (url.SchemeIs(chrome::kGripsScheme)) {
+     if (url.host() == chrome::kGripsExamHost) {
+       return &NewWebUI<GripsExamUI>;
++    }
++    if (url.host() == chrome::kGripsLoginHost) {
++      return &NewWebUI<GripsLoginUI>;
+     }
+     return nullptr;
+   }
+diff --git a/chrome/common/url_constants.h b/chrome/common/url_constants.h
+--- a/chrome/common/url_constants.h
++++ b/chrome/common/url_constants.h
+@@ -158,5 +158,6 @@ inline constexpr char kChromeSearchScheme[] = "chrome-search";
+ inline constexpr char kGripsScheme[] = "grips";
+ inline constexpr char kGripsExamHost[] = "exam";
+ inline constexpr char kGripsTrustedExamHost[] = "exam.cs.ac.cn";
++inline constexpr char kGripsLoginHost[] = "login";
+ inline constexpr char kGripsExamUrl[] = "grips://exam/";
+ 
+diff --git a/chrome/browser/ui/webui/grips/grips_url_handler.cc b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+--- a/chrome/browser/ui/webui/grips/grips_url_handler.cc
++++ b/chrome/browser/ui/webui/grips/grips_url_handler.cc
+@@ -36,5 +36,10 @@ bool HandleGripsExamURL(GURL* url,
+   if (url->host() == chrome::kGripsExamHost) {
+     return false;
+   }
++  // grips://login is a browser-owned login surface. It navigates the current
++  // tab to Connect and must not be treated as an untrusted exam alias.
++  if (url->host() == chrome::kGripsLoginHost) {
++    return false;
++  }
+ 
+   if (!IsValidPublicExamEntry(*url)) {
+diff --git a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+--- a/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
++++ b/chrome/browser/ui/webui/grips/grips_ui_browsertest.cc
+@@ -39,14 +39,16 @@ IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, PublicExamLinkIsRewritten) {
+   EXPECT_EQ("https://exam.cs.ac.cn/course-101?attempt=first", target);
+ }
+ 
+-IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, OldAgentServerRoutesAreGone) {
++IN_PROC_BROWSER_TEST_F(GripsUIBrowserTest, LoginHostUsesConnectController) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), GURL("grips://login/?manual=1")));
+ 
+   ASSERT_TRUE(web_contents()->GetWebUI());
+   const GURL committed = web_contents()->GetLastCommittedURL();
+-  EXPECT_EQ(chrome::kGripsExamHost, committed.host());
+-
+-  std::string error;
+-  ASSERT_TRUE(net::GetValueForKeyInQuery(committed, "error", &error));
+-  EXPECT_EQ("invalid_exam_link", error);
++  EXPECT_TRUE(committed.SchemeIs(chrome::kGripsScheme));
++  EXPECT_EQ(chrome::kGripsLoginHost, committed.host());
++  EXPECT_NE(nullptr, web_contents()
++                         ->GetWebUI()
++                         ->GetController()
++                         ->GetAs<GripsLoginUI>());
++  EXPECT_EQ(u"Connect sign-in · BYOD Browser", web_contents()->GetTitle());
+ }

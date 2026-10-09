@@ -13,7 +13,6 @@
 #include "build/build_config.h"
 #include "components/device_signals/core/common/common_types.h"
 #include "components/enterprise/connectors/core/reporting_constants.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "components/device_signals/core/common/win/win_types.h"
@@ -275,12 +274,8 @@ struct ProfileSignalsResponse : BaseSignalResponse {
 
   bool built_in_dns_client_enabled = false;
   bool chrome_remote_desktop_app_blocked = false;
-  std::optional<safe_browsing::PasswordProtectionTrigger>
-      password_protection_warning_trigger = std::nullopt;
   std::vector<std::string> profile_affiliation_ids{};
   std::optional<std::string> profile_enrollment_domain = std::nullopt;
-  safe_browsing::SafeBrowsingState safe_browsing_protection_level =
-      safe_browsing::SafeBrowsingState::NO_SAFE_BROWSING;
   bool site_isolation_enabled = false;
   std::optional<std::string> profile_id = std::nullopt;
 

@@ -172,13 +172,11 @@ class ChromeMetricsServicesManagerClient::ChromeEnabledStateProvider
   ~ChromeEnabledStateProvider() override = default;
 
   bool IsConsentGiven() const override {
-    return ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled(
-        local_state_);
+    return false;
   }
 
   bool IsReportingEnabled() const override {
-    return metrics::EnabledStateProvider::IsReportingEnabled() &&
-           IsClientInSampleImpl(local_state_);
+    return false;
   }
 
  private:

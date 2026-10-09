@@ -46,7 +46,6 @@
 #include "components/offline_items_collection/core/offline_content_aggregator.h"
 #include "components/safe_browsing/buildflags.h"
 #include "components/safe_browsing/core/common/features.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
 
@@ -280,14 +279,6 @@ void DownloadBubbleUIController::ProcessDownloadButtonPress(
   switch (command) {
     case DownloadCommands::KEEP:
     case DownloadCommands::DISCARD: {
-      if (safe_browsing::IsSafeBrowsingSurveysEnabled(*profile_->GetPrefs())) {
-        TrustSafetySentimentService* trust_safety_sentiment_service =
-            TrustSafetySentimentServiceFactory::GetForProfile(profile_);
-        if (trust_safety_sentiment_service) {
-          trust_safety_sentiment_service->InteractedWithDownloadWarningUI(
-              warning_surface, warning_action);
-        }
-      }
       DownloadItemWarningData::AddWarningActionEvent(item, warning_surface,
                                                      warning_action);
       // Launch a HaTS survey. Note this needs to come before the command is

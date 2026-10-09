@@ -18,7 +18,6 @@
 #include "components/safe_browsing/core/browser/utils/backoff_operator.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safe_browsing/core/common/utils.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/net_errors.h"
@@ -124,21 +123,7 @@ constexpr net::NetworkTrafficAnnotationTag kOhttpKeyTrafficAnnotation =
 bool IsEnabled(PrefService* pref_service,
                std::optional<std::string> country,
                bool are_background_lookups_allowed) {
-  // If this class has been created, it is already known that the session is not
-  // off-the-record, so |is_off_the_record| is passed through as false.
-  safe_browsing::hash_realtime_utils::HashRealTimeSelection
-      hash_realtime_selection =
-          safe_browsing::hash_realtime_utils::DetermineHashRealTimeSelection(
-              /*is_off_the_record=*/false, pref_service,
-              /*latest_country=*/country, /*log_usage_histograms=*/false,
-              /*are_background_lookups_allowed=*/
-              are_background_lookups_allowed);
-  return hash_realtime_selection ==
-             safe_browsing::hash_realtime_utils::HashRealTimeSelection::
-                 kHashRealTimeService ||
-         hash_realtime_selection ==
-             safe_browsing::hash_realtime_utils::HashRealTimeSelection::
-                 kHashRealTimeServiceBackgroundOnly;
+  return false;
 }
 
 GURL GetKeyFetchingUrl() {
@@ -507,30 +492,9 @@ void OhttpKeyService::MaybeStartServerTriggeredFetch(
 }
 
 void OhttpKeyService::PopulateKeyFromPref() {
-  std::string key =
-      pref_service_->GetString(prefs::kSafeBrowsingHashRealTimeOhttpKey);
-  base::Time expiration_time = pref_service_->GetTime(
-      prefs::kSafeBrowsingHashRealTimeOhttpExpirationTime);
-  std::string key_fetch_url = pref_service_->GetString(
-      prefs::kSafeBrowsingHashRealTimeOhttpKeyFetchUrl);
-  if (!key.empty() && expiration_time > base::Time::Now() &&
-      key_fetch_url == kHashPrefixRealTimeLookupsKeyFetchUrl.Get()) {
-    std::string decoded_key;
-    base::Base64Decode(key, &decoded_key);
-    ohttp_key_ = {decoded_key, expiration_time};
-  }
 }
 
 void OhttpKeyService::StoreKeyToPref() {
-  if (ohttp_key_ && ohttp_key_->expiration > base::Time::Now()) {
-    std::string base64_encoded_key = base::Base64Encode(ohttp_key_->key);
-    pref_service_->SetString(prefs::kSafeBrowsingHashRealTimeOhttpKey,
-                             base64_encoded_key);
-    pref_service_->SetTime(prefs::kSafeBrowsingHashRealTimeOhttpExpirationTime,
-                           ohttp_key_->expiration);
-    pref_service_->SetString(prefs::kSafeBrowsingHashRealTimeOhttpKeyFetchUrl,
-                             kHashPrefixRealTimeLookupsKeyFetchUrl.Get());
-  }
 }
 
 void OhttpKeyService::Shutdown() {

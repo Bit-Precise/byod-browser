@@ -96,25 +96,6 @@ em::SettingValue TranslateSettingValue(
   }
 }
 
-em::ProfileSignalsReport::PasswordProtectionTrigger
-TranslatePasswordProtectionTrigger(
-    std::optional<safe_browsing::PasswordProtectionTrigger> trigger) {
-  if (trigger == std::nullopt) {
-    return em::ProfileSignalsReport::POLICY_UNSET;
-  }
-  switch (trigger.value()) {
-    case safe_browsing::PasswordProtectionTrigger::PASSWORD_PROTECTION_OFF:
-      return em::ProfileSignalsReport::PASSWORD_PROTECTION_OFF;
-    case safe_browsing::PasswordProtectionTrigger::PASSWORD_REUSE:
-      return em::ProfileSignalsReport::PASSWORD_REUSE;
-    case safe_browsing::PasswordProtectionTrigger::PHISHING_REUSE:
-      return em::ProfileSignalsReport::PHISHING_REUSE;
-    case safe_browsing::PasswordProtectionTrigger::
-        PASSWORD_PROTECTION_TRIGGER_MAX:
-      NOTREACHED();
-  }
-}
-
 em::ProfileSignalsReport::RealtimeUrlCheckMode TranslateRealtimeUrlCheckMode(
     enterprise_connectors::EnterpriseRealTimeUrlCheckMode mode) {
   switch (mode) {
@@ -124,18 +105,6 @@ em::ProfileSignalsReport::RealtimeUrlCheckMode TranslateRealtimeUrlCheckMode(
     case enterprise_connectors::EnterpriseRealTimeUrlCheckMode::
         REAL_TIME_CHECK_FOR_MAINFRAME_ENABLED:
       return em::ProfileSignalsReport::ENABLED_MAIN_FRAME;
-  }
-}
-
-em::ProfileSignalsReport::SafeBrowsingLevel TranslateSafeBrowsingLevel(
-    safe_browsing::SafeBrowsingState level) {
-  switch (level) {
-    case safe_browsing::SafeBrowsingState::NO_SAFE_BROWSING:
-      return em::ProfileSignalsReport::NO_SAFE_BROWSING;
-    case safe_browsing::SafeBrowsingState::STANDARD_PROTECTION:
-      return em::ProfileSignalsReport::STANDARD_PROTECTION;
-    case safe_browsing::SafeBrowsingState::ENHANCED_PROTECTION:
-      return em::ProfileSignalsReport::ENHANCED_PROTECTION;
   }
 }
 

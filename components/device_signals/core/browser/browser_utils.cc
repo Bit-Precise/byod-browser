@@ -33,35 +33,6 @@ bool IsURLBlocked(const GURL& url, PolicyBlocklistService* service) {
 
 namespace device_signals {
 
-safe_browsing::SafeBrowsingState GetSafeBrowsingProtectionLevel(
-    PrefService* profile_prefs) {
-  DCHECK(profile_prefs);
-  bool safe_browsing_enabled =
-      profile_prefs->GetBoolean(prefs::kSafeBrowsingEnabled);
-  bool safe_browsing_enhanced_enabled =
-      profile_prefs->GetBoolean(prefs::kSafeBrowsingEnhanced);
-
-  if (safe_browsing_enabled) {
-    if (safe_browsing_enhanced_enabled) {
-      return safe_browsing::SafeBrowsingState::ENHANCED_PROTECTION;
-    } else {
-      return safe_browsing::SafeBrowsingState::STANDARD_PROTECTION;
-    }
-  } else {
-    return safe_browsing::SafeBrowsingState::NO_SAFE_BROWSING;
-  }
-}
-
-std::optional<safe_browsing::PasswordProtectionTrigger>
-GetPasswordProtectionWarningTrigger(PrefService* profile_prefs) {
-  DCHECK(profile_prefs);
-  if (!profile_prefs->HasPrefPath(prefs::kPasswordProtectionWarningTrigger)) {
-    return std::nullopt;
-  }
-  return static_cast<safe_browsing::PasswordProtectionTrigger>(
-      profile_prefs->GetInteger(prefs::kPasswordProtectionWarningTrigger));
-}
-
 bool GetChromeRemoteDesktopAppBlocked(PolicyBlocklistService* service) {
   DCHECK(service);
   return IsURLBlocked(GURL("https://remotedesktop.google.com"), service) ||

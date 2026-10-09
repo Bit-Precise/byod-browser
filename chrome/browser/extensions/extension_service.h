@@ -24,7 +24,6 @@
 #include "chrome/browser/extensions/extension_telemetry_service_verdict_handler.h"
 #include "chrome/browser/extensions/forced_extensions/force_installed_metrics.h"
 #include "chrome/browser/extensions/forced_extensions/force_installed_tracker.h"
-#include "chrome/browser/extensions/omaha_attributes_handler.h"
 #include "chrome/browser/extensions/safe_browsing_verdict_handler.h"
 #include "chrome/browser/policy/cloud/extension_install_policy_service.h"
 #include "chrome/browser/profiles/profile_manager_observer.h"
@@ -169,10 +168,6 @@ class ExtensionService : public ExtensionServiceInterface,
   // Called when the associated Profile is going to be destroyed, as part of
   // KeyedService two-phase shutdown.
   void Shutdown();
-
-  // Performs action based on Omaha attributes for the extension.
-  void PerformActionBasedOnOmahaAttributes(const std::string& extension_id,
-                                           const base::DictValue& attributes);
 
   // Performs action based on verdicts received from the Extension Telemetry
   // server. Currently, these verdicts are limited to off-store extensions.
@@ -390,8 +385,6 @@ class ExtensionService : public ExtensionServiceInterface,
   ExtensionTelemetryServiceVerdictHandler
       extension_telemetry_service_verdict_handler_;
 
-  // Needs `extension_registrar_` during construction.
-  OmahaAttributesHandler omaha_attributes_handler_;
 
   // Tracker of enterprise policy forced installation.
   ForceInstalledTracker force_installed_tracker_;

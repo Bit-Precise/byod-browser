@@ -30,14 +30,9 @@ GeneratedJavascriptOptimizerPref::GeneratedJavascriptOptimizerPref(
   user_prefs_registrar_.Init(profile->GetPrefs());
   user_prefs_registrar_.AddMultiple(
       {prefs::kJavascriptOptimizerBlockedForUnfamiliarSites,
-       prefs::kSafeBrowsingEnabled},
+       },
       base::BindRepeating(
           &GeneratedJavascriptOptimizerPref::OnPreferencesChanged,
-          base::Unretained(this)));
-  user_prefs_registrar_.Add(
-      prefs::kSecuritySettingsBundle,
-      base::BindRepeating(
-          &GeneratedJavascriptOptimizerPref::OnSettingsBundleChanged,
           base::Unretained(this)));
 
   host_content_settings_map_ =
@@ -103,7 +98,6 @@ PrefObject GeneratedJavascriptOptimizerPref::GetPrefObject() const {
         &pref_object, SettingSource::kPolicy);
   }
 
-  if (!safe_browsing::IsSafeBrowsingEnabled(*profile_->GetPrefs())) {
     pref_object.enforcement =
         extensions::api::settings_private::Enforcement::kEnforced;
     pref_object.controlled_by =
@@ -114,7 +108,6 @@ PrefObject GeneratedJavascriptOptimizerPref::GetPrefObject() const {
     user_selectable_values.Append(
         base::Value(static_cast<int>(JavascriptOptimizerSetting::kBlocked)));
     pref_object.user_selectable_values = std::move(user_selectable_values);
-  }
 
   return pref_object;
 }
@@ -124,35 +117,7 @@ void GeneratedJavascriptOptimizerPref::OnPreferencesChanged() {
 }
 
 void GeneratedJavascriptOptimizerPref::OnSettingsBundleChanged() {
-  auto bundle = safe_browsing::GetSecurityBundleSetting(*profile_->GetPrefs());
-  switch (bundle) {
-    case safe_browsing::SecuritySettingsBundleSetting::STANDARD: {
-      base::Value pref_value(
-          static_cast<int>(JavascriptOptimizerSetting::kAllowed));
-      SetPref(&pref_value);
-      break;
-    }
-    case safe_browsing::SecuritySettingsBundleSetting::ENHANCED: {
-      base::Value pref_value(static_cast<int>(
-          JavascriptOptimizerSetting::kBlockedForUnfamiliarSites));
-      SetPref(&pref_value);
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
 }
 
-content_settings::JavascriptOptimizerSetting
-GeneratedJavascriptOptimizerPref::GetDefaultJsOptimizerSetting(
-    safe_browsing::SecuritySettingsBundleSetting bundle_setting) {
-  switch (bundle_setting) {
-    case safe_browsing::SecuritySettingsBundleSetting::STANDARD:
-      return content_settings::JavascriptOptimizerSetting::kAllowed;
-    case safe_browsing::SecuritySettingsBundleSetting::ENHANCED:
-      return content_settings::JavascriptOptimizerSetting::
-          kBlockedForUnfamiliarSites;
-  }
-}
 
 }  // namespace content_settings

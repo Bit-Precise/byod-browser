@@ -130,7 +130,7 @@ class DownloadItemModelData : public base::SupportsUserData::Data {
 
   // Danger level of the file determined based on the file type and whether
   // there was a user action associated with the download.
-  DownloadFileType::DangerLevel danger_level_ = DownloadFileType::NOT_DANGEROUS;
+  safe_browsing::DownloadFileType::DangerLevel danger_level_ = safe_browsing::DownloadFileType::NOT_DANGEROUS;
 
   // Whether the download is currently being revived.
   bool is_being_revived_ = false;
@@ -469,13 +469,13 @@ void DownloadItemModel::SetShouldPreferOpeningInBrowser(bool preference) {
   data->should_prefer_opening_in_browser_ = preference;
 }
 
-DownloadFileType::DangerLevel DownloadItemModel::GetDangerLevel() const {
+safe_browsing::DownloadFileType::DangerLevel DownloadItemModel::GetDangerLevel() const {
   const DownloadItemModelData* data = DownloadItemModelData::Get(download_);
-  return data ? data->danger_level_ : DownloadFileType::NOT_DANGEROUS;
+  return data ? data->danger_level_ : safe_browsing::DownloadFileType::NOT_DANGEROUS;
 }
 
 void DownloadItemModel::SetDangerLevel(
-    DownloadFileType::DangerLevel danger_level) {
+    safe_browsing::DownloadFileType::DangerLevel danger_level) {
   DownloadItemModelData* data = DownloadItemModelData::GetOrCreate(download_);
   data->danger_level_ = danger_level;
 }

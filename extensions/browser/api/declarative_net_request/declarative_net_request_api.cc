@@ -134,13 +134,6 @@ DeclarativeNetRequestUpdateDynamicRulesFunction::Run() {
     return RespondNow(NoArguments());
   }
 
-  // Collect rules to add in the Extension Telemetry Service.
-  if (!rules_to_add.empty()) {
-    ExtensionsBrowserClient::Get()
-        ->GetSafeBrowsingDelegate()
-        ->NotifyExtensionApiDeclarativeNetRequest(browser_context(),
-                                                  extension_id(), rules_to_add);
-  }
 
   auto* rules_monitor_service =
       declarative_net_request::RulesMonitorService::Get(browser_context());
@@ -249,13 +242,6 @@ DeclarativeNetRequestUpdateSessionRulesFunction::Run() {
     return RespondNow(NoArguments());
   }
 
-  // Collect rules to add in the Extension Telemetry Service.
-  if (!rules_to_add.empty()) {
-    ExtensionsBrowserClient::Get()
-        ->GetSafeBrowsingDelegate()
-        ->NotifyExtensionApiDeclarativeNetRequest(browser_context(),
-                                                  extension_id(), rules_to_add);
-  }
 
   auto* rules_monitor_service =
       declarative_net_request::RulesMonitorService::Get(browser_context());

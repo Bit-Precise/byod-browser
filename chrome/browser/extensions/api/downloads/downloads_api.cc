@@ -60,7 +60,6 @@
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -1082,21 +1081,6 @@ bool IsDownloadDeltaField(const std::string& field) {
 // dangerous download.
 // NOTE: Android does not support the TrustSafetySentimentService.
 void MaybeTriggerTrustSafetySentimentSurvey(Profile* profile, bool accept) {
-#if !BUILDFLAG(IS_ANDROID)
-  // Survey triggered on ACCEPT action, since this is where the user
-  // confirms their choice to keep a dangerous download, rather than
-  // triggering a survey after selecting to KEEP in the downloads page UI.
-  if (safe_browsing::IsSafeBrowsingSurveysEnabled(*profile->GetPrefs()) &&
-      accept) {
-    TrustSafetySentimentService* trust_safety_sentiment_service =
-        TrustSafetySentimentServiceFactory::GetForProfile(profile);
-    if (trust_safety_sentiment_service) {
-      trust_safety_sentiment_service->InteractedWithDownloadWarningUI(
-          DownloadItemWarningData::WarningSurface::DOWNLOAD_PROMPT,
-          DownloadItemWarningData::WarningAction::PROCEED);
-    }
-  }
-#endif  // !BUILDFLAG(IS_ANDROID)
 }
 
 }  // namespace

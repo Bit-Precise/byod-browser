@@ -658,22 +658,6 @@ RealTimeUrlLookupServiceBase::GetResourceRequest() {
 RTLookupRequest::LlamaForcedTriggerCapability
 RealTimeUrlLookupServiceBase::MaybeGetLlamaForcedTriggerCapability() const {
   auto model_type = IntelligentScanModelType::NOT_SUPPORTED;
-  if (pref_service_ && IsEnhancedProtectionEnabled(*pref_service_) &&
-      intelligent_scan_delegate_) {
-    switch (intelligent_scan_delegate_->GetIntelligentScanModelType(
-        /*log_failed_eligibility_reason=*/false)) {
-      case IntelligentScanDelegate::ModelType::kNotSupportedOnDevice:
-      case IntelligentScanDelegate::ModelType::kNotSupportedServerSide:
-        model_type = IntelligentScanModelType::NOT_SUPPORTED;
-        break;
-      case IntelligentScanDelegate::ModelType::kOnDevice:
-        model_type = IntelligentScanModelType::ON_DEVICE_MODEL;
-        break;
-      case IntelligentScanDelegate::ModelType::kServerSide:
-        model_type = IntelligentScanModelType::SERVER_SIDE_MODEL;
-        break;
-    }
-  }
   RTLookupRequest::LlamaForcedTriggerCapability capability;
   capability.set_supported_model_type(model_type);
   return capability;
@@ -694,17 +678,6 @@ void RealTimeUrlLookupServiceBase::StartFillingRequestProto(
   request->set_report_type(is_sampled_report ? RTLookupRequest::SAMPLED_REPORT
                                              : RTLookupRequest::FULL_REPORT);
   request->set_frame_type(RTLookupRequest::MAIN_FRAME);
-  if (referring_app_info && pref_service_ &&
-      IsEnhancedProtectionEnabled(*pref_service_)) {
-    safe_browsing::ReferringAppInfo referring_app_info_proto;
-    referring_app_info_proto.set_referring_app_name(
-        referring_app_info.value().referring_app_name);
-    referring_app_info_proto.set_referring_app_source(
-        referring_app_info.value().referring_app_source);
-    *request->mutable_referring_app_info() =
-        std::move(referring_app_info_proto);
-    MaybeFillReferringWebApk(*referring_app_info, *request);
-  }
   *request->mutable_llama_forced_trigger_capability() =
       MaybeGetLlamaForcedTriggerCapability();
 

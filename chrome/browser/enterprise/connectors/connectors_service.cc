@@ -15,6 +15,7 @@
 #include "chrome/browser/enterprise/browser_management/management_identity.h"
 #include "chrome/browser/enterprise/connectors/common.h"
 #include "chrome/browser/enterprise/connectors/connectors_manager.h"
+#include "chrome/browser/enterprise/util/affiliation.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/browser/policy/dm_token_utils.h"
 #include "chrome/browser/profiles/profile.h"
@@ -268,7 +269,13 @@ std::string ConnectorsService::GetManagementDomain() {
 }
 
 bool ConnectorsService::IsProfileAffiliated() const {
+#if BUILDFLAG(IS_CHROMEOS)
   return IsAffiliated(Profile::FromBrowserContext(context_));
+#else
+  // Keep the same affiliation check without the cloud-scanning common target.
+  return enterprise_util::IsProfileAffiliated(
+      Profile::FromBrowserContext(context_));
+#endif
 }
 
 std::string ConnectorsService::GetProfileEmail() const {

@@ -167,7 +167,7 @@ bool ChromeWebContentsViewDelegateViewsMac::TakeFocus(bool reverse) {
 void ChromeWebContentsViewDelegateViewsMac::OnPerformingDrop(
     const content::DropData& drop_data,
     DropCompletionCallback callback) {
-  HandleOnPerformingDrop(web_contents_, drop_data, std::move(callback));
+  if (!callback.is_null()) std::move(callback).Run(std::move(drop_data));
 }
 
 std::unique_ptr<RenderViewContextMenuBase>

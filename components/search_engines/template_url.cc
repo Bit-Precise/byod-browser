@@ -628,10 +628,7 @@ std::u16string TemplateURLRef::SearchTermToString16(
 bool TemplateURLRef::HasGoogleBaseURLs(
     const SearchTermsData& search_terms_data) const {
   ParseIfNecessary(search_terms_data);
-  return std::ranges::any_of(replacements_, [](const Replacement& replacement) {
-    return replacement.type == GOOGLE_BASE_URL ||
-           replacement.type == GOOGLE_BASE_SUGGEST_URL;
-  });
+  return false;
 }
 
 bool TemplateURLRef::ExtractSearchTermsFromURL(

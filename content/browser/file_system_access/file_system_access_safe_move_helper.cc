@@ -159,8 +159,7 @@ FileSystemAccessSafeMoveHelper::FileSystemAccessSafeMoveHelper(
       dest_url_(dest_url),
       options_(options),
       quarantine_connection_callback_(
-          std::move(quarantine_connection_callback)),
-      has_transient_user_activation_(has_transient_user_activation) {}
+          std::move(quarantine_connection_callback)) {}
 
 FileSystemAccessSafeMoveHelper::~FileSystemAccessSafeMoveHelper() = default;
 
@@ -175,15 +174,8 @@ void FileSystemAccessSafeMoveHelper::Start(
     return;
   }
 
-  if (!RequireAfterWriteChecks() || !manager_->permission_context()) {
     DidAfterWriteCheck(
         FileSystemAccessPermissionContext::AfterWriteCheckResult::kAllow);
-    return;
-  }
-
-  ComputeHashForSourceFile(
-      base::BindOnce(&FileSystemAccessSafeMoveHelper::DoAfterWriteCheck,
-                     weak_factory_.GetWeakPtr()));
 }
 
 void FileSystemAccessSafeMoveHelper::ComputeHashForSourceFile(
@@ -220,46 +212,6 @@ bool FileSystemAccessSafeMoveHelper::RequireAfterWriteChecks() const {
 
 bool FileSystemAccessSafeMoveHelper::RequireQuarantine() const {
   return dest_url().type() != storage::kFileSystemTypeTemporary;
-}
-
-void FileSystemAccessSafeMoveHelper::DoAfterWriteCheck(
-    base::File::Error hash_result,
-    const std::string& hash,
-    int64_t size) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (hash_result != base::File::FILE_OK) {
-    // Calculating the hash failed.
-    std::move(callback_).Run(file_system_access_error::FromStatus(
-        blink::mojom::FileSystemAccessStatus::kOperationAborted,
-        "Failed to perform Safe Browsing check."));
-    return;
-  }
-
-  if (!manager_) {
-    std::move(callback_).Run(file_system_access_error::FromStatus(
-        blink::mojom::FileSystemAccessStatus::kOperationAborted));
-    return;
-  }
-
-  content::GlobalRenderFrameHostId outermost_main_frame_id;
-  auto* rfh = content::RenderFrameHost::FromID(context_.frame_id);
-  if (rfh)
-    outermost_main_frame_id = rfh->GetOutermostMainFrame()->GetGlobalId();
-
-  auto item = std::make_unique<FileSystemAccessWriteItem>();
-  item->target_file_path = dest_url().path();
-  item->full_path = source_url().path();
-  item->sha256_hash = hash;
-  item->size = size;
-  item->frame_url = context_.url;
-  item->outermost_main_frame_id = outermost_main_frame_id;
-  item->initiating_frame_id = context_.frame_id;
-  item->has_user_gesture = has_transient_user_activation_;
-  manager_->permission_context()->PerformAfterWriteChecks(
-      std::move(item), context_.frame_id,
-      base::BindOnce(&FileSystemAccessSafeMoveHelper::DidAfterWriteCheck,
-                     weak_factory_.GetWeakPtr()));
 }
 
 void FileSystemAccessSafeMoveHelper::DidAfterWriteCheck(

@@ -275,16 +275,10 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
       prefs::kSafeBrowsingEsbProtegoPingWithTokenLastLogTime, base::Time());
   registry->RegisterTimePref(
       prefs::kSafeBrowsingEsbProtegoPingWithoutTokenLastLogTime, base::Time());
-  registry->RegisterBooleanPref(
-      prefs::kSafeBrowsingEnabled, true,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  if (base::FeatureList::IsEnabled(kEsbAsASyncedSetting)) {
-    registry->RegisterBooleanPref(
-        prefs::kSafeBrowsingEnhanced, false,
-        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  } else {
-    registry->RegisterBooleanPref(prefs::kSafeBrowsingEnhanced, false);
-  }
+  // BYOD has no Google Safe Browsing or account sync. Keep local preference
+  // keys for existing callers, but do not register removed sync metadata.
+  registry->RegisterBooleanPref(prefs::kSafeBrowsingEnabled, false);
+  registry->RegisterBooleanPref(prefs::kSafeBrowsingEnhanced, false);
   registry->RegisterBooleanPref(prefs::kSafeBrowsingProceedAnywayDisabled,
                                 false);
   registry->RegisterIntegerPref(
@@ -312,9 +306,8 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kSafeBrowsingHashRealTimeOhttpKey, "");
   registry->RegisterStringPref(prefs::kSafeBrowsingHashRealTimeOhttpKeyFetchUrl,
                                "");
-  registry->RegisterTimePref(
-      prefs::kAccountTailoredSecurityUpdateTimestamp, base::Time(),
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+  registry->RegisterTimePref(prefs::kAccountTailoredSecurityUpdateTimestamp,
+                             base::Time());
   registry->RegisterBooleanPref(
       prefs::kAccountTailoredSecurityShownNotification, false);
   registry->RegisterBooleanPref(

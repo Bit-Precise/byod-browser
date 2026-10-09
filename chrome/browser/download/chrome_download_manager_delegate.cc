@@ -190,7 +190,6 @@ using content::DownloadManager;
 using download::DownloadItem;
 using download::DownloadPathReservationTracker;
 using download::PathValidationResult;
-using safe_browsing::DownloadFileType;
 using ConnectionType = net::NetworkChangeNotifier::ConnectionType;
 
 #if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
@@ -330,7 +329,6 @@ void CheckDownloadUrlDone(
   }
   std::move(callback).Run(danger_type);
 }
-#endif  // SAFE_BROWSING_DOWNLOAD_PROTECTION
 
 // Returns true if the danger type is either FORCE_SAVE_TO_ONEDRIVE or
 // FORCE_SAVE_TO_GDrive.
@@ -338,6 +336,8 @@ bool IsForceSaveToCloud(download::DownloadDangerType danger_type) {
   return danger_type == download::DOWNLOAD_DANGER_TYPE_FORCE_SAVE_TO_ONEDRIVE ||
          danger_type == download::DOWNLOAD_DANGER_TYPE_FORCE_SAVE_TO_GDRIVE;
 }
+#endif  // SAFE_BROWSING_DOWNLOAD_PROTECTION
+
 // Called asynchronously to determine the MIME type for |path|.
 std::string GetMimeType(const base::FilePath& path) {
 #if BUILDFLAG(IS_ANDROID)
@@ -2262,7 +2262,6 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
     DownloadItemModel model(item);
     model.DetermineAndSetShouldPreferOpeningInBrowser(
         target_info.target_path, target_info.is_filetype_handled_safely);
-    model.SetDangerLevel(danger_level);
   }
   if (ShouldBlockFile(item, target_info.danger_type)) {
     MaybeReportDangerousDownloadBlocked(
@@ -2343,50 +2342,20 @@ bool ChromeDownloadManagerDelegate::IsOpenInBrowserPreferredForFile(
 bool ChromeDownloadManagerDelegate::ShouldBlockFile(
     download::DownloadItem* item,
     download::DownloadDangerType danger_type) const {
-  // Chrome-initiated background downloads should not be blocked.
-  if (item && !item->RequireSafetyChecks()) {
-    return false;
-  }
-
   policy::DownloadRestriction download_restriction =
       download_prefs_->download_restriction();
-
-  if (IsDangerTypeBlocked(danger_type)) {
-    return true;
-  }
-
-  bool file_type_dangerous =
-      (item && DownloadItemModel(item).GetDangerLevel() !=
-                   DownloadFileType::NOT_DANGEROUS);
 
   switch (download_restriction) {
     case (policy::DownloadRestriction::NONE):
       return false;
 
-    case (policy::DownloadRestriction::POTENTIALLY_DANGEROUS_FILES):
-      return danger_type != download::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS ||
-             file_type_dangerous;
-
-    case (policy::DownloadRestriction::DANGEROUS_FILES): {
-      return (danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
-              danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
-              danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
-              danger_type ==
-                  download::DOWNLOAD_DANGER_TYPE_DANGEROUS_ACCOUNT_COMPROMISE ||
-              file_type_dangerous);
-    }
-
-    case (policy::DownloadRestriction::MALICIOUS_FILES): {
-      return (danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
-              danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
-              danger_type == download::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
-              danger_type ==
-                  download::DOWNLOAD_DANGER_TYPE_DANGEROUS_ACCOUNT_COMPROMISE);
-    }
-
     case (policy::DownloadRestriction::ALL_FILES):
       return true;
 
+    // DownloadRestrictions policy key values 1, 2 and 4 treated as invalid
+    case (policy::DownloadRestriction::POTENTIALLY_DANGEROUS_FILES):
+    case (policy::DownloadRestriction::DANGEROUS_FILES):
+    case (policy::DownloadRestriction::MALICIOUS_FILES):
     default:
       LOG(ERROR) << "Invalid download restriction value: "
                  << static_cast<int>(download_restriction);

@@ -410,7 +410,6 @@ void TailoredSecurityService::MaybeNotifySyncUser(bool is_enabled,
       RecordEnabledNotificationResult(
           TailoredSecurityNotificationResult::kHistoryNotSynced);
     }
-    SaveRetryState(TailoredSecurityRetryState::NO_RETRY_NEEDED);
     return;
   }
 
@@ -420,7 +419,6 @@ void TailoredSecurityService::MaybeNotifySyncUser(bool is_enabled,
       RecordEnabledNotificationResult(
           TailoredSecurityNotificationResult::kSafeBrowsingControlledByPolicy);
     }
-    SaveRetryState(TailoredSecurityRetryState::NO_RETRY_NEEDED);
     return;
   }
 
@@ -530,23 +528,8 @@ void TailoredSecurityService::Shutdown() {
 }
 
 void TailoredSecurityService::TailoredSecurityTimestampUpdateCallback() {
-  // TODO(crbug.com/40925236): remove sync flow last user interaction pref.
-  prefs_->SetInteger(prefs::kTailoredSecuritySyncFlowLastUserInteractionState,
-                     TailoredSecurityRetryState::UNKNOWN);
-  prefs_->SetTime(prefs::kTailoredSecuritySyncFlowLastRunTime,
-                  base::Time::Now());
-  // If this method fails, then a retry is needed. If it succeeds, the
-  // ChromeTailoredSecurityService will set this value to NO_RETRY_NEEDED for
-  // us.
-  prefs_->SetInteger(prefs::kTailoredSecuritySyncFlowRetryState,
-                     TailoredSecurityRetryState::RETRY_NEEDED);
-
   StartRequest(base::BindOnce(&TailoredSecurityService::MaybeNotifySyncUser,
                               weak_ptr_factory_.GetWeakPtr()));
-}
-
-void TailoredSecurityService::SaveRetryState(TailoredSecurityRetryState state) {
-  prefs_->SetInteger(prefs::kTailoredSecuritySyncFlowRetryState, state);
 }
 
 void TailoredSecurityService::SetCanQuery(bool can_query) {
@@ -568,13 +551,6 @@ bool TailoredSecurityService::IsResponsibleForNotification(
     return true;
   }
 
-  bool is_enhanced_enabled = IsEnhancedProtectionEnabled(*prefs);
-  if (is_enhanced_enabled &&
-      prefs->GetBoolean(prefs::kEnhancedProtectionEnabledViaTailoredSecurity)) {
-    // The TailoredSecurityService was responsible for enabling enhanced
-    // protection and will show its own UI.
-    return true;
-  }
 
   return false;
 }

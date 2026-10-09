@@ -127,10 +127,10 @@ void ContextInfoFetcher::Fetch(ContextInfoCallback callback) {
               Profile::FromBrowserContext(browser_context_)));
 
   Profile* profile = Profile::FromBrowserContext(browser_context_);
+  // Google Safe Browsing is absent; do not read its service preferences.
   info.safe_browsing_protection_level =
-      device_signals::GetSafeBrowsingProtectionLevel(profile->GetPrefs());
-  info.password_protection_warning_trigger =
-      device_signals::GetPasswordProtectionWarningTrigger(profile->GetPrefs());
+      safe_browsing::SafeBrowsingState::NO_SAFE_BROWSING;
+  info.password_protection_warning_trigger = std::nullopt;
   info.enterprise_profile_id = GetEnterpriseProfileId(profile);
 
 #if BUILDFLAG(IS_WIN)

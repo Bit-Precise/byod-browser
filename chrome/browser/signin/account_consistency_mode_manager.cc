@@ -84,27 +84,8 @@ bool CanEnableDiceForBuild() {
 // consistency method cannot change during the lifetime of a profile.
 signin::AccountConsistencyMethod ComputeAccountConsistencyMethod(
     Profile* profile) {
-  DCHECK(AccountConsistencyModeManager::ShouldBuildServiceForProfile(profile));
-
-#if BUILDFLAG(IS_CHROMEOS)
-  if (!ash::IsAccountManagerAvailable(profile)) {
-    return AccountConsistencyMethod::kDisabled;
-  }
-#endif
-
-#if BUILDFLAG(ENABLE_MIRROR)
-  return AccountConsistencyMethod::kMirror;
-#elif BUILDFLAG(ENABLE_DICE_SUPPORT)
-  if (!profile->GetPrefs()->GetBoolean(prefs::kSigninAllowed)) {
-    VLOG(1) << "Desktop Identity Consistency disabled as sign-in to Chrome "
-               "is not allowed";
-    return AccountConsistencyMethod::kDisabled;
-  }
-
-  return AccountConsistencyMethod::kDice;
-#else
-  NOTREACHED();
-#endif
+  // Connect/OIDC is independent of Google's browser identity.
+  return AccountConsistencyMethod::kDisabled;
 }
 
 }  // namespace

@@ -10,11 +10,11 @@ declare_args() {
   # Indicates support for content analysis against a cloud agent for Enterprise
   # Connector policies.
   enterprise_cloud_content_analysis =
-      is_win || is_mac || is_linux || is_chromeos || is_ios
+      false
 
   # Indicates support for content analysis against a cloud agent for Enterprise
   # Connector policies.
-  enterprise_local_content_analysis = is_win || is_mac || is_linux
+  enterprise_local_content_analysis = false
 
   # Indicates support for Data Control rules.
   enterprise_data_controls =

@@ -129,7 +129,7 @@ ContentAnalysisDownloadsDelegate::GetCustomRuleMessageRanges() const {
 }
 
 bool ContentAnalysisDownloadsDelegate::BypassRequiresJustification() const {
-  return bypass_justification_required_;
+  return false;
 }
 
 std::u16string ContentAnalysisDownloadsDelegate::GetBypassJustificationLabel()

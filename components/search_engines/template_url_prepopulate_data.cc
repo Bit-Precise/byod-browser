@@ -107,7 +107,9 @@ std::unique_ptr<TemplateURLData> FindPrepopulatedEngineInternal(
   // This could be more efficient. We load all URLs but keep only one.
   std::vector<std::unique_ptr<TemplateURLData>> prepopulated_engines =
       GetPrepopulatedEngines(prefs, regional_prepopulated_engines);
-  CHECK(!prepopulated_engines.empty());
+  if (prepopulated_engines.empty()) {
+    return nullptr;
+  }
 
   for (auto& engine : prepopulated_engines) {
     if (engine->prepopulate_id == prepopulated_id) {
@@ -192,8 +194,12 @@ std::vector<std::unique_ptr<TemplateURLData>> GetPrepopulatedEngines(
     return t_urls;
   }
 
-  return base::ToVector(regional_prepopulated_engines,
-                        &PrepopulatedEngineToTemplateURLData);
+  auto engines = base::ToVector(regional_prepopulated_engines,
+                               &PrepopulatedEngineToTemplateURLData);
+  std::erase_if(engines, [](const auto& engine) {
+    return engine->prepopulate_id == google.id;
+  });
+  return engines;
 }
 
 std::unique_ptr<TemplateURLData> GetPrepopulatedEngine(
@@ -317,9 +323,9 @@ std::unique_ptr<TemplateURLData> GetPrepopulatedFallbackSearch(
     PrefService& prefs,
     const std::vector<raw_ptr<const PrepopulatedEngine>>&
         regional_prepopulated_engines) {
-  return FindPrepopulatedEngineInternal(prefs, regional_prepopulated_engines,
-                                        google.id,
-                                        /*use_first_as_fallback=*/true);
+  // BYOD has no implicit cloud search provider. Users can select a non-Google
+  // engine or configure a custom one explicitly.
+  return nullptr;
 }
 
 }  // namespace TemplateURLPrepopulateData

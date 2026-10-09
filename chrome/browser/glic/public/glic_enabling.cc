@@ -677,7 +677,7 @@ void GlicEnabling::ProfileEnablement::RecordSteadyStateMetrics() const {
 }
 
 bool GlicEnabling::ProfileEnablement::IsProfileEligible() const {
-  return feature_enabled && is_regular_profile;
+  return false;
 }
 
 bool GlicEnabling::ProfileEnablement::IsEnabled() const {
@@ -697,30 +697,10 @@ bool GlicEnabling::ProfileEnablement::IsEnabledAndConsented() const {
 }
 
 bool GlicEnabling::ProfileEnablement::ShouldShowSettingsPage() const {
-  const bool show_ai_settings_for_testing = base::FeatureList::IsEnabled(
-      optimization_guide::features::kAiSettingsPageForceAvailable);
-
-  // If the feature is disabled by enterprise policy, the settings page
-  // should be shown (it will be shown in a policy-disabled state) only if
-  // all other non-enterprise conditions are met: the account has all
-  // appropriate permissions and has previously completed the FRE before the
-  // policy went into effect. The settings page should also be shown if the
-  // settings testing flag is enabled.
-  return show_ai_settings_for_testing ||
-         (IsProfileEligible() && is_rolled_out && primary_account_is_capable &&
-          allowed_by_remote_other && fre_is_consented);
+  return false;
 }
 
 bool GlicEnabling::ProfileEnablement::ShouldShowGlicButton() const {
-  if (!feature_flag_enabled) {
-    return false;
-  }
-  if (IsEnabled()) {
-    return true;
-  }
-  if (anchor_entrypoint_override_active) {
-    return !DisallowedByAdmin() && is_rolled_out;
-  }
   return false;
 }
 

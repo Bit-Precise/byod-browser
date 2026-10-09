@@ -16,40 +16,7 @@
 namespace page_load_metrics {
 
 std::optional<std::string> GetGoogleHostnamePrefix(const GURL& url) {
-  const std::optional<size_t> registry_length =
-      net::registry_controlled_domains::GetRegistry(
-          url,
-
-          // Do not include unknown registries (registries that don't have any
-          // matches in effective TLD names).
-          net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
-
-          // Do not include private registries, such as appspot.com. We don't
-          // want to match URLs like www.google.appspot.com.
-          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)
-          .transform(&std::string_view::size);
-
-  const std::string_view hostname = url.host();
-  if (!registry_length.has_value() || *registry_length == 0 ||
-      *registry_length >= hostname.length()) {
     return std::nullopt;
-  }
-
-  // Removes the tld and the preceding dot.
-  const std::string_view hostname_minus_registry =
-      hostname.substr(0, hostname.length() - (*registry_length + 1));
-
-  if (hostname_minus_registry == "google") {
-    return std::string("");
-  }
-
-  if (!base::EndsWith(hostname_minus_registry, ".google",
-                      base::CompareCase::INSENSITIVE_ASCII)) {
-    return std::nullopt;
-  }
-
-  return std::string(hostname_minus_registry.substr(
-      0, hostname_minus_registry.length() - strlen(".google")));
 }
 
 bool IsGoogleHostname(const GURL& url) {
@@ -57,9 +24,7 @@ bool IsGoogleHostname(const GURL& url) {
 }
 
 bool IsGoogleSearchHostname(const GURL& url) {
-  std::optional<std::string> result =
-      page_load_metrics::GetGoogleHostnamePrefix(url);
-  return result && result.value() == "www";
+  return false;
 }
 
 bool IsProbablyGoogleSearchUrl(const GURL& url) {

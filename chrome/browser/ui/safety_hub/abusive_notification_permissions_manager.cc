@@ -109,20 +109,7 @@ safe_browsing::NotificationRevocationSource GetNotificationRevocationSource(
 // suspicious notification.
 bool HasShowOriginalSuspiciousNotification(HostContentSettingsMap* hcsm,
                                            GURL url) {
-  DCHECK(hcsm);
-  DCHECK(url.is_valid());
-  base::Value stored_value(hcsm->GetWebsiteSetting(
-      url, url, ContentSettingsType::SUSPICIOUS_NOTIFICATION_SHOW_ORIGINAL));
-
-  if (stored_value.is_none()) {
     return false;
-  }
-  DCHECK(stored_value.is_dict());
-  DCHECK(stored_value.GetDict().contains(
-      safe_browsing::kSuspiciousNotificationShowOriginalKey));
-  return stored_value.GetDict()
-      .FindBool(safe_browsing::kSuspiciousNotificationShowOriginalKey)
-      .value_or(false);
 }
 
 // Return true if the url should be considered for suspicious content

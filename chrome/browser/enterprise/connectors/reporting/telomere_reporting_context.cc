@@ -178,19 +178,6 @@ TelomereReportingContext* TelomereReportingContext::GetInstance() {
 }
 
 RealtimeReportingClient* TelomereReportingContext::GetReportingClient() const {
-  for (auto& it : active_profiles_) {
-    Profile* profile = it.second;
-    RealtimeReportingClient* reporting_client =
-        RealtimeReportingClientFactory::GetForProfile(profile);
-    if (!reporting_client) {
-      continue;
-    }
-    std::optional<ReportingSettings> settings =
-        reporting_client->GetReportingSettings();
-    if (settings.has_value() && !settings->per_profile) {
-      return reporting_client;
-    }
-  }
   return nullptr;
 }
 

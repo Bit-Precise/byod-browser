@@ -45,16 +45,6 @@ ReportingServiceSettings::ReportingServiceSettings(
       else
         DVLOG(1) << "Enabled event name list contains a non string value!";
     }
-  } else {
-    // When the list of enabled event names is not set, we assume all events are
-    // enabled. This is to support the feature of selecting the "All always on"
-    // option in the policy UI, which means to always enable all events, even
-    // when new events may be added in the future. And this is also to support
-    // existing customer policies that were created before we introduced the
-    // concept of enabling/disabling events.
-    for (const char* event : kAllReportingEnabledEvents) {
-      enabled_event_names_.insert(event);
-    }
   }
 
   const base::ListValue* enabled_opt_in_events_value =

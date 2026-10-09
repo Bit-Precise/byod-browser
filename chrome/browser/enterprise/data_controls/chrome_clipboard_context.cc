@@ -213,16 +213,7 @@ std::string ChromeClipboardContext::source_active_user() const {
 }
 
 std::string ChromeClipboardContext::destination_active_user() const {
-  if (!destination_) {
     return "";
-  }
-  auto* profile = Profile::FromBrowserContext(destination_->browser_context());
-  if (!profile) {
-    return "";
-  }
-
-  return enterprise_connectors::ContentAreaUserProvider::GetUser(
-      profile, destination_->web_contents(), destination_url());
 }
 
 }  // namespace data_controls

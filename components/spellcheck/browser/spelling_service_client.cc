@@ -50,9 +50,6 @@ const char kMisspellingsRestPath[] = "spellingCheckResponse.misspellings";
 // The location of error messages in JSON response from spelling service.
 const char kErrorPath[] = "error";
 
-// Languages currently supported by SPELLCHECK.
-const char* const kValidLanguages[] = {"en", "es", "fi", "da"};
-
 GURL GetRegionalizedEndpoint(enterprise_connectors::DataRegion data_region,
                              int version) {
   const char* key = google_apis::GetAPIKey().c_str();
@@ -183,38 +180,9 @@ bool SpellingServiceClient::RequestTextCheck(
 
 bool SpellingServiceClient::IsAvailable(content::BrowserContext* context,
                                         ServiceType type) {
-  const PrefService* pref = user_prefs::UserPrefs::Get(context);
-  DCHECK(pref);
-  // If prefs don't allow spell checking, if enhanced spell check is disabled,
-  // or if the context is off the record, the spelling service should be
-  // unavailable.
-  if (!pref->GetBoolean(spellcheck::prefs::kSpellCheckEnable) ||
-      !pref->GetBoolean(spellcheck::prefs::kSpellCheckUseSpellingService) ||
-      context->IsOffTheRecord())
-    return false;
-
-  // If the locale for spelling has not been set, the user has not decided to
-  // use spellcheck so we don't do anything remote (suggest or spelling).
-  std::string locale;
-  const auto& dicts_list =
-      pref->GetList(spellcheck::prefs::kSpellCheckDictionaries);
-  if (!dicts_list.empty() && dicts_list[0].is_string()) {
-    locale = dicts_list[0].GetString();
-  }
-
-  if (locale.empty())
-    return false;
-
-  // Finally, if all options are available, we only enable only SUGGEST
-  // if SPELLCHECK is not available for our language because SPELLCHECK results
-  // are a superset of SUGGEST results.
-  for (const char* language : kValidLanguages) {
-    if (!locale.compare(0, 2, language))
-      return type == SPELLCHECK;
-  }
-
-  // Only SUGGEST is allowed.
-  return type == SUGGEST;
+  // Only Google's enhanced online service is removed. Local/platform spelling
+  // remains available, and RequestTextCheck completes with failure immediately.
+  return false;
 }
 
 void SpellingServiceClient::SetURLLoaderFactoryForTesting(

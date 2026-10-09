@@ -88,32 +88,6 @@ std::optional<std::string> RealtimeEventUploadHelper::GetDMToken(
 
 enterprise_connectors::RealtimeReportingClientBase*
 RealtimeEventUploadHelper::GetRealTimeReportingClient() const {
-  if (profile_) {
-    return enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
-        profile_);
-  }
-
-  if (!g_browser_process) {
-    return nullptr;
-  }
-
-  if (!g_browser_process->profile_manager()) {
-    return nullptr;
-  }
-
-  // TODO(crbug.com/527894269): RealtimeReportingClient is currently a
-  // KeyedService and we retrieve a client from an arbitrary profile for
-  // browser-level reporting. This is not ideal. We should refactor it to have a
-  // browser-wide instance.
-  for (auto* profile :
-       g_browser_process->profile_manager()->GetLoadedProfiles()) {
-    auto* client =
-        enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
-            profile);
-    if (client) {
-      return client;
-    }
-  }
   return nullptr;
 }
 

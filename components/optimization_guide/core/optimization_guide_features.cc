@@ -246,15 +246,15 @@ GURL GetOptimizationGuideServiceGetModelsURL() {
 }
 
 bool IsOptimizationTargetPredictionEnabled() {
-  return base::FeatureList::IsEnabled(kOptimizationTargetPrediction);
+  return false;
 }
 
 bool IsOptimizationHintsEnabled() {
-  return base::FeatureList::IsEnabled(kOptimizationHints);
+  return false;
 }
 
 bool IsModelQualityLoggingEnabled() {
-  return base::FeatureList::IsEnabled(kModelQualityLogging);
+  return false;
 }
 
 bool IsModelQualityLoggingEnabledForFeature(
@@ -267,7 +267,7 @@ bool IsModelQualityLoggingEnabledForFeature(
 }
 
 bool IsSRPFetchingEnabled() {
-  return base::FeatureList::IsEnabled(kOptimizationGuideFetchingForSRP);
+  return false;
 }
 
 bool IsPushNotificationsEnabled() {

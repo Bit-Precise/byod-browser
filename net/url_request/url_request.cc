@@ -56,6 +56,7 @@
 #include "net/url_request/url_request_redirect_job.h"
 #include "url/gurl.h"
 #include "url/origin.h"
+#include "net/traffic_annotation/byod_google_services.h"
 
 namespace net {
 
@@ -627,6 +628,14 @@ void URLRequest::Start() {
   load_timing_info_ = LoadTimingInfo();
   load_timing_info_.request_start_time = response_info_.request_time;
   load_timing_info_.request_start = base::TimeTicks::Now();
+
+  // Fail closed before proxy lookup, DNS, or socket creation for built-in
+  // Google services. Website requests use their own annotation and are not
+  // blocked merely because the user visits a Google-hosted website.
+  if (IsByodGoogleServiceTraffic(traffic_annotation_, url())) {
+    StartJob(std::make_unique<URLRequestErrorJob>(this, ERR_BLOCKED_BY_CLIENT));
+    return;
+  }
 
   if (network_delegate()) {
     OnCallToDelegate(NetLogEventType::NETWORK_DELEGATE_BEFORE_URL_REQUEST);

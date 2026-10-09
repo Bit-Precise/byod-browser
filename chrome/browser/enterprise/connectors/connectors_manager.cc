@@ -152,22 +152,7 @@ void ConnectorsManager::OnAnalysisPrefChanged(AnalysisConnector connector) {
 }
 
 DataRegion ConnectorsManager::GetDataRegion(AnalysisConnector connector) const {
-  // Connector's policy scope determines the DRZ policy scope to use.
-  policy::PolicyScope scope = static_cast<policy::PolicyScope>(
-      prefs()->GetInteger(AnalysisConnectorScopePref(connector)));
-
-  const PrefService* pref_service =
-      (scope == policy::PolicyScope::POLICY_SCOPE_MACHINE)
-          ? g_browser_process->local_state()
-          : prefs();
-
-  if (!pref_service ||
-      !pref_service->HasPrefPath(prefs::kChromeDataRegionSetting)) {
     return DataRegion::NO_PREFERENCE;
-  }
-
-  return ChromeDataRegionSettingToEnum(
-      pref_service->GetInteger(prefs::kChromeDataRegionSetting));
 }
 
 std::unique_ptr<AnalysisServiceSettingsBase>

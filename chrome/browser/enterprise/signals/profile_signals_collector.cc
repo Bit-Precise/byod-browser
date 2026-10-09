@@ -78,12 +78,8 @@ void ProfileSignalsCollector::GetProfileSignals(
   signal_response.chrome_remote_desktop_app_blocked =
       device_signals::GetChromeRemoteDesktopAppBlocked(
           policy_blocklist_service_);
-  signal_response.password_protection_warning_trigger =
-      device_signals::GetPasswordProtectionWarningTrigger(profile_prefs_);
   signal_response.profile_enrollment_domain =
       device_signals::TryGetEnrollmentDomain(policy_manager_);
-  signal_response.safe_browsing_protection_level =
-      device_signals::GetSafeBrowsingProtectionLevel(profile_prefs_);
   signal_response.site_isolation_enabled =
       device_signals::GetSiteIsolationEnabled();
   signal_response.profile_id = profile_id_service_->GetProfileId();

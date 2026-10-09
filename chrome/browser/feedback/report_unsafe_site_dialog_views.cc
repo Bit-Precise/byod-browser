@@ -24,7 +24,6 @@
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/branded_strings.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/interaction/element_identifier.h"
@@ -74,10 +73,7 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(ReportUnsafeSiteDialogViews,
 
 // static
 bool ReportUnsafeSiteDialog::IsEnabled(const Profile& profile) {
-  const PrefService* prefs = profile.GetPrefs();
-  return base::FeatureList::IsEnabled(features::kReportUnsafeSite) &&
-         !profile.IsOffTheRecord() && chrome::CanShowFeedback(&profile) &&
-         safe_browsing::IsSafeBrowsingEnabled(*prefs);
+  return false;
 }
 
 // static

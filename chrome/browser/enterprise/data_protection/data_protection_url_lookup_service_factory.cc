@@ -13,8 +13,7 @@ namespace enterprise_data_protection {
 // static
 DataProtectionUrlLookupServiceFactory*
 DataProtectionUrlLookupServiceFactory::GetInstance() {
-  static base::NoDestructor<DataProtectionUrlLookupServiceFactory> instance;
-  return instance.get();
+  return nullptr;
 }
 
 // static

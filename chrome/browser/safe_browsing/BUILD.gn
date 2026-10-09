@@ -6,7 +6,15 @@ import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
-static_library("safe_browsing") {
+_safe_browsing_target_type = "static_library"
+if (is_win && safe_browsing_mode == 0) {
+  # The disabled Windows target has no sources or dependencies. Keep the
+  # dependency label without asking the librarian to produce an empty archive.
+  _safe_browsing_target_type = "group"
+}
+
+target(_safe_browsing_target_type, "safe_browsing") {
+  if (false) {
   public = [
     "chrome_controller_client.h",
     "metrics/bundled_settings_metrics_provider.h",
@@ -108,9 +116,9 @@ static_library("safe_browsing") {
     "//services/preferences/public/cpp",
     "//ui/base",
   ]
+  }
 
   if (enable_extensions) {
-    deps += [ "//chrome/browser/ui/web_applications" ]
 
     if (is_chromeos) {
       deps += [ "//chromeos/ash/components/system" ]
@@ -136,16 +144,6 @@ static_library("safe_browsing") {
         [ "//chrome/browser/ui/android/safe_browsing:safe_browsing" ]
   }
 
-  if (!is_android) {
-    public += [
-      "generated_safe_browsing_pref.h",
-      "generated_security_settings_bundle_pref.h",
-    ]
-    sources += [
-      "generated_safe_browsing_pref.cc",
-      "generated_security_settings_bundle_pref.cc",
-    ]
-  }
 
   if (is_chromeos) {
     deps += [ "//chrome/browser/ash/file_manager" ]
@@ -153,22 +151,6 @@ static_library("safe_browsing") {
     allow_circular_includes_from += [ "//chrome/browser/ash/file_manager" ]
   }
 
-  if (is_win || is_mac || is_linux || is_chromeos) {
-    public += [ "security_settings_bundle_toast_helper.h" ]
-    sources += [ "security_settings_bundle_toast_helper.cc" ]
-    deps += [
-      "//chrome/browser/ui/browser_window",
-      "//chrome/browser/ui/toasts",
-      "//chrome/browser/ui/toasts/api:toasts",
-
-      # Shows the safe_browsing views dialogs (toolkit_views only), which in
-      # turn include this target's chrome_password_protection_service.h.
-      "//chrome/browser/ui/views/safe_browsing",
-    ]
-
-    allow_circular_includes_from +=
-        [ "//chrome/browser/ui/views/safe_browsing" ]
-  }
 
   if (safe_browsing_mode != 0) {
     # "Safe Browsing Basic" files used for safe browsing in full mode
@@ -721,6 +703,7 @@ static_library("advanced_protection") {
 }
 
 source_set("metrics_collector") {
+  if (false) {
   sources = [
     "safe_browsing_metrics_collector_factory.cc",
     "safe_browsing_metrics_collector_factory.h",
@@ -740,6 +723,7 @@ source_set("metrics_collector") {
     "//components/safe_browsing/core/common:safe_browsing_prefs",
     "//content/public/browser",
   ]
+  }
 }
 
 source_set("unit_tests") {

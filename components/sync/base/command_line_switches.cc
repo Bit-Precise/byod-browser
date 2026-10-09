@@ -11,7 +11,7 @@
 namespace syncer {
 
 bool IsSyncAllowedByFlag() {
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(kDisableSync);
+  return false;  // BYOD Connect does not use Google Sync.
 }
 
 }  // namespace syncer

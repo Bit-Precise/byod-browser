@@ -32,10 +32,6 @@
 
 namespace variations {
 
-// The name string for the header for variations information.
-// Note that prior to M33 this header was named X-Chrome-Variations.
-const char kClientDataHeader[] = "X-Client-Data";
-
 namespace {
 
 // The result of checking whether a request to a URL should have variations
@@ -124,16 +120,7 @@ URLValidationResult GetUrlValidationResult(const GURL& url) {
 // rather than `headers`, to be exempted from CORS checks, and to avoid exposing
 // the header to service workers.
 bool ShouldAppendVariationsHeader(const GURL& url, InIncognito incognito) {
-  // Note the criteria for attaching client experiment headers:
-  // 1. We only transmit to Google owned domains which can evaluate
-  // experiments.
-  //    1a. These include hosts which have a standard postfix such as:
-  //         *.doubleclick.net or *.googlesyndication.com or
-  //         exactly www.googleadservices.com or
-  //         international TLD domains *.google.<TLD> or *.youtube.<TLD>.
-  // 2. Only transmit for non-Incognito profiles.
-  return incognito == InIncognito::kNo &&
-         GetUrlValidationResult(url) == URLValidationResult::kShouldAppend;
+  return false;
 }
 
 // Returns non-empty `std::string` if `variations_headers` has a header value
@@ -141,19 +128,7 @@ bool ShouldAppendVariationsHeader(const GURL& url, InIncognito incognito) {
 std::optional<std::string> GetHeaderValue(
     const variations::mojom::VariationsHeaders* variations_headers,
     bool is_first_party_context) {
-  if (!variations_headers) {
     return std::nullopt;
-  }
-
-  const std::string& header = variations_headers->headers_map.at(
-      is_first_party_context
-          ? variations::mojom::GoogleWebVisibility::FIRST_PARTY
-          : variations::mojom::GoogleWebVisibility::ANY);
-  if (header.empty()) {
-    // For the X-Client-Data header, only include non-empty variation IDs.
-    return std::nullopt;
-  }
-  return header;
 }
 
 // Returns true if the request is sent from a Google web property, i.e. from a
@@ -289,15 +264,6 @@ bool AppendVariationsHeader(const GURL& url,
                             InIncognito incognito,
                             SignedIn signed_in,
                             network::ResourceRequest* request) {
-  // TODO(crbug.com/40135370): Consider passing the Owner instead of
-  // `Owner::kUnknown` if we can get it. However, we really only care about
-  // having the owner for requests initiated on the renderer side.
-  if (auto header = GetVariationsHeaderValueToAppend(
-          url, incognito, signed_in,
-          IsFirstPartyContext(Owner::kUnknown, *request))) {
-    request->cors_exempt_headers.SetHeaderIfMissing(kClientDataHeader, *header);
-    return true;
-  }
   return false;
 }
 
@@ -321,14 +287,6 @@ bool AppendVariationsHeaderWithCustomValue(
     const variations::mojom::VariationsHeaders* variations_headers,
     Owner owner,
     network::ResourceRequest* request) {
-  if (variations_headers && ShouldAppendVariationsHeader(url, incognito)) {
-    if (std::optional<std::string> header_value = GetHeaderValue(
-            variations_headers, IsFirstPartyContext(owner, *request))) {
-      request->cors_exempt_headers.SetHeaderIfMissing(kClientDataHeader,
-                                                      *header_value);
-      return true;
-    }
-  }
   return false;
 }
 
@@ -361,9 +319,6 @@ void RemoveVariationsHeaderIfNeeded(
     const network::mojom::URLResponseHead& response_head,
     InIncognito incognito,
     std::vector<std::string>* to_be_removed_headers) {
-  if (!ShouldAppendVariationsHeader(redirect_info.new_url, incognito)) {
-    to_be_removed_headers->push_back(kClientDataHeader);
-  }
 }
 
 std::unique_ptr<network::SimpleURLLoader>
@@ -400,28 +355,21 @@ CreateSimpleURLLoaderWithVariationsHeaderUnknownSignedIn(
 }
 
 bool HasVariationsHeader(const network::ResourceRequest& request) {
-  std::string unused_header;
-  return GetVariationsHeader(request, &unused_header);
+  return false;
 }
 
 bool GetVariationsHeader(const network::ResourceRequest& request,
                          std::string* out) {
-  std::optional<std::string> header_value =
-      request.cors_exempt_headers.GetHeader(kClientDataHeader);
-  if (header_value) {
-    out->swap(header_value.value());
-  }
-  return header_value.has_value();
+  return false;
 }
 
 bool ShouldAppendVariationsHeaderForTesting(const GURL& url,  // IN-TEST
                                             InIncognito incognito) {
-  return ShouldAppendVariationsHeader(url, incognito);
+  return false;
 }
 
 void UpdateCorsExemptHeaderForVariations(
     network::mojom::NetworkContextParams* params) {
-  params->cors_exempt_header_list.push_back(kClientDataHeader);
 }
 
 }  // namespace variations

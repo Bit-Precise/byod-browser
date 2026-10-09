@@ -35,21 +35,6 @@ bool SaasUsageReportSchedulerDelegateImpl::IsReady() {
 }
 
 void SaasUsageReportSchedulerDelegateImpl::OnProfileAdded(Profile* profile) {
-  // If browser is managed, any profile with a RealtimeReportingClient will be
-  // able to upload reports using browser DM token.
-  if (!enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
-          profile)) {
-    return;
-  }
-
-  bool was_ready = IsReady();
-  profile_observation_.AddObservation(profile);
-  if (ready_state_changed_callback_ && !was_ready) {
-    VLOG_POLICY(1, REPORTING)
-        << "SaaS usage reporting is enabled because a reporting-enabled "
-           "profile has been added.";
-    ready_state_changed_callback_.Run();
-  }
 }
 
 void SaasUsageReportSchedulerDelegateImpl::OnProfileManagerDestroying() {

@@ -173,10 +173,6 @@ SafetyHubHandler::SafetyHubHandler(Profile* profile)
   prefs_observation_.Observe(ExtensionPrefs::Get(profile_));
   extension_registry_observation_.Observe(ExtensionRegistry::Get(profile_));
   pref_change_registrar_.Init(profile_->GetPrefs());
-  pref_change_registrar_.Add(
-      prefs::kSafeBrowsingEnhanced,
-      base::BindRepeating(&SafetyHubHandler::OnSafeBrowsingEnhancedChanged,
-                          base::Unretained(this)));
 }
 SafetyHubHandler::~SafetyHubHandler() = default;
 
@@ -827,14 +823,4 @@ void SafetyHubHandler::OnJavascriptAllowed() {}
 void SafetyHubHandler::OnJavascriptDisallowed() {}
 
 void SafetyHubHandler::OnSafeBrowsingEnhancedChanged() {
-  if (profile_->GetPrefs()->GetBoolean(prefs::kSafeBrowsingEnhanced) &&
-      MobilePromoOnDesktopTypeEnabled(
-          MobilePromoOnDesktopPromoType::kESBPromo)) {
-    IOSPromoTriggerService* service =
-        IOSPromoTriggerServiceFactory::GetForProfile(profile_);
-    if (service) {
-      service->NotifyPromoShouldBeShown(
-          desktop_to_mobile_promos::PromoType::kEnhancedBrowsing);
-    }
-  }
 }

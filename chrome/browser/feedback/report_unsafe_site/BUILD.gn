@@ -12,7 +12,6 @@ if (!is_android) {
       "//skia",
     ]
     deps = [
-      "//components/safe_browsing/content/browser:client_side_detection",
       "//components/viz/common",
     ]
   }

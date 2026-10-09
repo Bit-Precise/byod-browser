@@ -14,16 +14,6 @@ export function getHtml(this: SettingsPeoplePageIndexElement) {
       route-path="${this.routes_.PEOPLE.path}">
   </settings-people-page>
 
-  <settings-sync-page slot="view" id="sync"
-      data-parent-view-id="parent"
-      route-path="${this.routes_.SYNC.path}">
-  </settings-sync-page>
-
-  <settings-sync-controls-page slot="view" id="syncControls"
-      data-parent-view-id="parent"
-      route-path="${this.routes_.SYNC_ADVANCED.path}">
-  </settings-sync-controls-page>
-
 <if expr="not is_chromeos">
    <settings-manage-profile slot="view" id="manageProfile"
        data-parent-view-id="parent"
@@ -31,16 +21,6 @@ export function getHtml(this: SettingsPeoplePageIndexElement) {
    </settings-manage-profile>
 </if>
 
-  ${this.replaceSyncPromosWithSignInPromos_ ? html`
-    <settings-account-page slot="view" id="account"
-        data-parent-view-id="parent"
-        route-path="${this.routes_.ACCOUNT.path}">
-    </settings-account-page>
-    <settings-google-services-page slot="view" id="googleServices"
-        data-parent-view-id="parent"
-        route-path="${this.routes_.GOOGLE_SERVICES.path}">
-    </settings-google-services-page>
-  ` : ''}
 </cr-view-manager>
 <!--_html_template_end_-->`;
 }

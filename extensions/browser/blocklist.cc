@@ -192,21 +192,8 @@ Blocklist::~Blocklist() = default;
 void Blocklist::GetBlocklistedIDs(const std::set<ExtensionId>& ids,
                                   GetBlocklistedIDsCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  if (ids.empty() || !GetDatabaseManager().get()) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), BlocklistStateMap()));
-    return;
-  }
-
-  // Constructing the SafeBrowsingClientImpl begins the process of asking
-  // safebrowsing for the blocklisted extensions. The set of blocklisted
-  // extensions returned by SafeBrowsing will then be passed to
-  // GetBlocklistStateIDs to get the particular BlocklistState for each id.
-  SafeBrowsingClientImpl::Start(
-      SafeBrowsingDatabaseManager::Client::GetPassKey(), ids,
-      base::BindOnce(&Blocklist::GetBlocklistStateForIDs,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void Blocklist::IsBlocklisted(const ExtensionId& extension_id,

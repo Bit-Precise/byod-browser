@@ -76,7 +76,6 @@ bool PlatformCrashpadInitialization(
   base::FilePath metrics_path;  // Only valid in the browser process.
 
   const char kPipeNameVar[] = "CHROME_CRASHPAD_PIPE_NAME";
-  const char kServerUrlVar[] = "CHROME_CRASHPAD_SERVER_URL";
   std::unique_ptr<base::Environment> env(base::Environment::Create());
 
   CrashReporterClient* crash_reporter_client = GetCrashReporterClient();
@@ -101,14 +100,9 @@ bool PlatformCrashpadInitialization(
       process_annotations.insert_or_assign(key, std::move(value));
     }
 
-    std::string url = crash_reporter_client->GetUploadUrl();
-
-    // Allow the crash server to be overridden for testing. If the variable
-    // isn't present in the environment then the default URL will remain.
-    std::optional<std::string> server_url = env->GetVar(kServerUrlVar);
-    if (server_url.has_value()) {
-      url = server_url.value();
-    }
+    // Keep Crashpad and its local database, but provide no upload destination.
+    // Do not let an inherited environment variable re-enable cloud uploads.
+    const std::string url;
 
     base::FilePath exe_file(exe_path);
     if (exe_file.empty()) {

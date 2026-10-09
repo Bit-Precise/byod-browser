@@ -240,20 +240,6 @@ void FilesRequestHandlerBase::MaybeTrackCancellation() {
 void FilesRequestHandlerBase::FinishRequestEarly(
     std::unique_ptr<BinaryUploadRequest> request,
     ScanRequestUploadResult result) {
-#if !BUILDFLAG(IS_IOS)
-  // We add the request here in case we never actually uploaded anything, so it
-  // wasn't added in OnGetRequestData
-  safe_browsing::WebUIContentInfoSingleton::GetInstance()
-      ->AddToDeepScanRequests(
-          request->per_profile_request(),
-          /*access_token*/ "",
-          /*upload_info*/ ScanRequestUploadResultToString(result),
-          /*upload_url=*/"", request->content_analysis_request());
-  safe_browsing::WebUIContentInfoSingleton::GetInstance()
-      ->AddToDeepScanResponses(
-          /*token=*/"", ScanRequestUploadResultToString(result),
-          enterprise_connectors::ContentAnalysisResponse());
-#endif
 
   BinaryUploadRequest* request_ptr = request.get();
   if (request->digest().empty() && request->register_on_got_hash_callback_) {

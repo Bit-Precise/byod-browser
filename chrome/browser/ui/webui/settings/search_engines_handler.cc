@@ -405,26 +405,6 @@ void SearchEnginesHandler::RecordSearchHijackingHeuristicMetric() {
     return;
   }
 
-  // Look for matches in the last 7 days, per the histograms.xml description.
-  auto status =
-      safe_browsing::SearchHijackingDetector::GetRecentHeuristicResult(
-          profile_->GetPrefs(), base::Days(7));
-
-  bool available =
-      (status !=
-       safe_browsing::SearchHijackingDetector::HeuristicResult::kUnknown);
-
-  base::UmaHistogramBoolean(
-      "Settings.SearchEngines.SearchHijackingDetector.HeuristicAvailable",
-      available);
-
-  if (available) {
-    base::UmaHistogramBoolean(
-        "Settings.SearchEngines.SearchHijackingDetector.HeuristicMatch",
-        status ==
-            safe_browsing::SearchHijackingDetector::HeuristicResult::kMatch);
-  }
-
   has_recorded_hijacking_metric_ = true;
 }
 

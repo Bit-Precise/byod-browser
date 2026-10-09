@@ -52,7 +52,6 @@
 #include "chrome/browser/extensions/external_provider_manager.h"
 #include "chrome/browser/extensions/install_verifier_factory.h"
 #include "chrome/browser/extensions/installed_loader.h"
-#include "chrome/browser/extensions/omaha_attributes_handler.h"
 #include "chrome/browser/extensions/profile_util.h"
 #include "chrome/browser/extensions/sync/extension_sync_service.h"
 #include "chrome/browser/extensions/updater/chrome_extension_downloader_factory.h"
@@ -226,9 +225,6 @@ ExtensionService::ExtensionService(
       extension_telemetry_service_verdict_handler_(extension_prefs,
                                                    registry_,
                                                    extension_registrar_),
-      omaha_attributes_handler_(extension_prefs,
-                                registry_,
-                                extension_registrar_),
       force_installed_tracker_(registry_, profile_),
       force_installed_metrics_(registry_, profile_, &force_installed_tracker_),
       corrupted_extension_reinstaller_(
@@ -424,11 +420,6 @@ void ExtensionService::LoadExtensionsFromCommandLineFlag(
         << "--load-extension is not allowed in Google Chrome, ignoring.";
     return;
 #else   // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
-    if (safe_browsing::IsEnhancedProtectionEnabled(*profile_->GetPrefs())) {
-      VLOG(1) << "--load-extension is not allowed for users opted into "
-              << "Enhanced Safe Browsing, ignoring.";
-      return;
-    }
     if (ShouldBlockCommandLineExtension(*profile_)) {
       // TODO(crbug.com/401529219): Deprecate this restriction once
       // --load-extension removal on Chrome builds is fully launched.
@@ -483,17 +474,6 @@ void ExtensionService::LoadSigninProfileTestExtension(const std::string& path) {
          "signin profile";
 }
 #endif
-
-void ExtensionService::PerformActionBasedOnOmahaAttributes(
-    const std::string& extension_id,
-    const base::DictValue& attributes) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  omaha_attributes_handler_.PerformActionBasedOnOmahaAttributes(extension_id,
-                                                                attributes);
-  allowlist_->PerformActionBasedOnOmahaAttributes(extension_id, attributes);
-  // Show an error for the newly blocklisted extension.
-  error_controller_->ShowErrorIfNeeded();
-}
 
 void ExtensionService::PerformActionBasedOnExtensionTelemetryServiceVerdicts(
     const Blocklist::BlocklistStateMap& blocklist_state_map) {

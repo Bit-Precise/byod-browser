@@ -26,24 +26,6 @@ enum class PasswordProtectionTrigger {
   kPhisingReuse = 3
 };
 
-PasswordProtectionTrigger ConvertPasswordProtectionTrigger(
-    const std::optional<safe_browsing::PasswordProtectionTrigger>&
-        policy_value) {
-  if (!policy_value) {
-    return PasswordProtectionTrigger::kUnset;
-  }
-
-  switch (policy_value.value()) {
-    case safe_browsing::PASSWORD_PROTECTION_OFF:
-      return PasswordProtectionTrigger::kOff;
-    case safe_browsing::PASSWORD_REUSE:
-      return PasswordProtectionTrigger::kPasswordReuse;
-    case safe_browsing::PHISHING_REUSE:
-      return PasswordProtectionTrigger::kPhisingReuse;
-    case safe_browsing::PASSWORD_PROTECTION_TRIGGER_MAX:
-      NOTREACHED();
-  }
-}
 
 }  // namespace
 
@@ -73,16 +55,8 @@ void ContextSignalsDecorator::OnSignalsFetched(
               ToListValue(context_info.browser_affiliation_ids));
   signals.Set(device_signals::names::kProfileAffiliationIds,
               ToListValue(context_info.profile_affiliation_ids));
-  signals.Set(device_signals::names::kRealtimeUrlCheckMode,
-              static_cast<int32_t>(context_info.realtime_url_check_mode));
-  signals.Set(
-      device_signals::names::kSafeBrowsingProtectionLevel,
-      static_cast<int32_t>(context_info.safe_browsing_protection_level));
   signals.Set(device_signals::names::kSiteIsolationEnabled,
               context_info.site_isolation_enabled);
-  signals.Set(device_signals::names::kPasswordProtectionWarningTrigger,
-              static_cast<int32_t>(ConvertPasswordProtectionTrigger(
-                  context_info.password_protection_warning_trigger)));
   signals.Set(device_signals::names::kChromeRemoteDesktopAppBlocked,
               context_info.chrome_remote_desktop_app_blocked);
   signals.Set(device_signals::names::kBuiltInDnsClientEnabled,

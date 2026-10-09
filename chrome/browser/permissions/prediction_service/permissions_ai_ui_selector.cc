@@ -660,69 +660,6 @@ bool PermissionsAiUiSelector::ShouldHoldBack(
 
 PredictionSource PermissionsAiUiSelector::GetPredictionTypeToUse(
     permissions::RequestType request_type) {
-  const bool is_msbb_enabled = profile_->GetPrefs()->GetBoolean(
-      unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled);
-
-  base::UmaHistogramBoolean("Permissions.PredictionService.MSBB",
-                            is_msbb_enabled);
-
-  VLOG(1) << "[CPSS] GetPredictionTypeToUse MSBB: " << is_msbb_enabled;
-
-  const bool is_notification_cpss_enabled =
-      profile_->GetPrefs()->GetBoolean(prefs::kEnableNotificationCPSS);
-
-  VLOG(1) << "[CPSS] GetPredictionTypeToUse NotificationCPSS: "
-          << is_notification_cpss_enabled;
-
-  const bool is_geolocation_cpss_enabled =
-      profile_->GetPrefs()->GetBoolean(prefs::kEnableGeolocationCPSS);
-
-  VLOG(1) << "[CPSS] GetPredictionTypeToUse GeolocationCPSS: "
-          << is_geolocation_cpss_enabled;
-
-  if (request_type == permissions::RequestType::kNotifications &&
-      !is_notification_cpss_enabled) {
-    VLOG(1) << "[CPSS] GetPredictionTypeToUse NoCpssModel";
-    return PredictionSource::kNoCpssModel;
-  }
-
-  if (request_type == permissions::RequestType::kGeolocation &&
-      !is_geolocation_cpss_enabled) {
-    VLOG(1) << "[CPSS] GetPredictionTypeToUse NoCpssModel";
-    return PredictionSource::kNoCpssModel;
-  }
-
-  bool use_server_side = false;
-  if (is_msbb_enabled) {
-#if BUILDFLAG(IS_ANDROID)
-    use_server_side = base::FeatureList::IsEnabled(
-        permissions::features::kPermissionDedicatedCpssSettingAndroid);
-#else
-    use_server_side = base::FeatureList::IsEnabled(
-        permissions::features::kPermissionPredictionsV2);
-#endif  // BUILDFLAG(IS_ANDROID)
-  }
-  if (use_server_side) {
-    // The AIv4 model takes priority over the server-side CPSSv3 model if
-    // enabled.
-    if (PredictionModelHandlerProvider::IsAIv4FeatureEnabled()) {
-      VLOG(1) << "[CPSS] GetPredictionTypeToUse AIv4";
-      return PredictionSource::kOnDeviceAiv4AndServerSideModel;
-    }
-    VLOG(1) << "[CPSS] GetPredictionTypeToUse CPSSv3";
-    return PredictionSource::kServerSideCpssV3Model;
-  }
-
-  if ((request_type == permissions::RequestType::kNotifications &&
-       base::FeatureList::IsEnabled(
-           permissions::features::
-               kPermissionOnDeviceNotificationPredictions)) ||
-      (request_type == permissions::RequestType::kGeolocation &&
-       base::FeatureList::IsEnabled(
-           permissions::features::kPermissionOnDeviceGeolocationPredictions))) {
-    VLOG(1) << "[CPSS] GetPredictionTypeToUse CPSSv1";
-    return PredictionSource::kOnDeviceCpssV1Model;
-  }
 
   VLOG(1) << "[CPSS] GetPredictionTypeToUse NoCpssModel";
   return PredictionSource::kNoCpssModel;

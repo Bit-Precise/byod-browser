@@ -48,7 +48,6 @@
 #include "components/data_sharing/public/features.h"
 #include "components/omnibox/browser/vector_icons.h"
 #include "components/safe_browsing/core/common/features.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/translate/core/browser/translate_manager.h"
@@ -175,60 +174,6 @@ void ToastService::RegisterToasts(
           .AddGlobalScoped()
           .Build());
 
-  // ESB as a synced setting.
-  if (base::FeatureList::IsEnabled(safe_browsing::kEsbAsASyncedSetting)) {
-    toast_registry_->RegisterToast(
-        ToastId::kSyncEsbOn,
-        ToastSpecification::Builder(
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-            vector_icons::kGshieldIcon,
-#else
-            features::IsRoundedIconsEnabled() ? kSecurityIcon
-                                              : kSecurityOldIcon,
-#endif
-            IDS_SETTINGS_SAFEBROWSING_ENHANCED_ON_TOAST_MESSAGE)
-            .AddActionButton(
-                IDS_SETTINGS_SETTINGS,
-                base::BindRepeating(
-                    [](BrowserWindowInterface* window) {
-                      window->OpenGURL(
-                          chrome::GetSettingsUrl(
-                              chrome::kSafeBrowsingEnhancedProtectionSubPage),
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB);
-                    },
-                    base::Unretained(browser_window_interface)))
-            .AddCloseButton()
-            .Build());
-    toast_registry_->RegisterToast(
-        ToastId::kSyncEsbOnWithoutActionButton,
-        ToastSpecification::Builder(
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-            vector_icons::kGshieldIcon,
-#else
-            features::IsRoundedIconsEnabled() ? kSecurityIcon
-                                              : kSecurityOldIcon,
-#endif
-            IDS_SETTINGS_SAFEBROWSING_ENHANCED_ON_TOAST_MESSAGE)
-            .Build());
-    toast_registry_->RegisterToast(
-        ToastId::kSyncEsbOff,
-        ToastSpecification::Builder(
-            features::IsRoundedIconsEnabled() ? kInfoIcon : kInfoOldIcon,
-            IDS_SETTINGS_SAFEBROWSING_ENHANCED_OFF_TOAST_MESSAGE)
-            .AddActionButton(
-                IDS_SETTINGS_SAFEBROWSING_TURN_ON_ENHANCED_TOAST_BUTTON,
-                base::BindRepeating(
-                    [](BrowserWindowInterface* window) {
-                      Profile* profile = window->GetProfile();
-                      if (profile) {
-                        profile->GetPrefs()->SetBoolean(
-                            prefs::kSafeBrowsingEnhanced, true);
-                      }
-                    },
-                    base::Unretained(browser_window_interface)))
-            .AddCloseButton()
-            .Build());
-  }
 
   if (data_sharing::features::IsDataSharingFunctionalityEnabled()) {
     // Current tab has been removed from the group.

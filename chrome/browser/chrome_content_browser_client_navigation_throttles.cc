@@ -431,15 +431,7 @@ void CreateAndAddChromeThrottlesForNavigation(
           Profile::FromBrowserContext(context)),
       SafeSearchFactory::GetForBrowserContext(context)));
 
-  // Before setting up SSL error detection, configure SSLErrorHandler to invoke
-  // the relevant extension API whenever an SSL interstitial is shown.
-  SSLErrorHandler::SetClientCallbackOnInterstitialsShown(
-      base::BindRepeating([](content::WebContents* web_contents,
-                             const GURL& page_url, const std::string& reason,
-                             int net_error_code) {
-        MaybeTriggerSecurityInterstitialShownEvent(
-            web_contents, page_url, reason, net_error_code, "");
-      }));
+  // BYOD retains the SSL interstitial but not Google security reporting.
   registry.AddThrottle(std::make_unique<SSLErrorNavigationThrottle>(
       registry, base::BindOnce(&HandleSSLErrorWrapper),
       base::BindOnce(&IsInWebApp),

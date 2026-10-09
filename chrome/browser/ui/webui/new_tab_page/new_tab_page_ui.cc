@@ -168,8 +168,8 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabPageUI,
 
 bool NewTabPageUIConfig::IsWebUIEnabled(
     content::BrowserContext* browser_context) {
-  Profile* profile = Profile::FromBrowserContext(browser_context);
-  return !profile->IsOffTheRecord();
+  // The local third-party NTP replaces Google's service-backed WebUI.
+  return false;
 }
 
 std::unique_ptr<content::WebUIController>

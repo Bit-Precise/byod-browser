@@ -335,8 +335,6 @@ CloudAnalysisSettings AnalysisServiceSettingsBase::GetCloudAnalysisSettings(
   CHECK(is_cloud_analysis());
 
   CloudAnalysisSettings cloud_settings;
-  cloud_settings.analysis_url =
-      GetRegionalizedEndpoint(analysis_config_->region_urls, data_region);
   // We assume all support_tags structs have the same max file size.
   cloud_settings.max_file_size =
       analysis_config_->supported_tags[0].max_file_size;

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <memory>
 
-#include "components/safe_browsing/content/browser/client_side_detection_host.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -60,8 +59,7 @@ ScreenshotTaker::ScreenshotTaker(
   gfx::Size target_size = ComputeTargetSize(
       view_size,
       gfx::Size(
-          safe_browsing::ClientSideDetectionHost::kMaxHighResScreenshotWidth,
-          safe_browsing::ClientSideDetectionHost::kMaxHighResScreenshotHeight));
+          4096, 2160));
   std::move(copy_from_surface_callback)
       .Run(gfx::Rect(view_size), target_size,
            base::BindOnce(&ScreenshotTaker::OnGotScreenshot,

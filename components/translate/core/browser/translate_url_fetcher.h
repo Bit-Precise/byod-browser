@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "base/functional/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "net/http/http_request_headers.h"
 #include "url/gurl.h"
 
@@ -80,11 +81,9 @@ class TranslateURLFetcherImpl : public TranslateUrlFetcher {
   // Counts how many times did it try to load the language list.
   int retry_count_;
 
-  // Max number how many times to retry on the server error
-  int max_retry_on_5xx_;
-
   // An extra HTTP request header
   net::HttpRequestHeaders extra_request_header_;
+  base::WeakPtrFactory<TranslateURLFetcherImpl> weak_factory_{this};
 };
 
 }  // namespace translate

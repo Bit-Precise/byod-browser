@@ -888,13 +888,6 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
   metrics_service_->RegisterMetricsProvider(MakeDemographicMetricsProvider(
       metrics::MetricsLogUploader::MetricServiceType::UMA));
 
-  // TODO(crbug.com/40765618): Add metrics registration for WebView and iOS.
-  metrics_service_->RegisterMetricsProvider(
-      std::make_unique<safe_browsing::SafeBrowsingMetricsProvider>());
-  if (base::FeatureList::IsEnabled(safe_browsing::kBundledSecuritySettings)) {
-    metrics_service_->RegisterMetricsProvider(
-        std::make_unique<safe_browsing::BundledSettingsMetricsProvider>());
-  }
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   metrics_service_->RegisterMetricsProvider(

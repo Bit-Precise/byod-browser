@@ -148,7 +148,7 @@ export class SettingsPrivacyPageIndexElement extends
       enableSafeBrowsingSubresourceFilter_: {
         type: Boolean,
         value: () => {
-          return loadTimeData.getBoolean('enableSafeBrowsingSubresourceFilter');
+          return false;
         },
       },
 

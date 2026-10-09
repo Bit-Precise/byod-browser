@@ -183,7 +183,6 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUISubresourceFilterInternalsHost,
       kChromeUISuggestInternalsHost,
       kChromeUINTPTilesInternalsHost,
-      safe_browsing::kChromeUISafeBrowsingHost,
       kChromeUISyncInternalsHost,
 #if !BUILDFLAG(IS_ANDROID)
       kChromeUITabSearchHost,

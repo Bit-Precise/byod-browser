@@ -76,34 +76,7 @@ RealTimeUrlLookupServiceFactory::~RealTimeUrlLookupServiceFactory() = default;
 std::unique_ptr<KeyedService>
 RealTimeUrlLookupServiceFactory::BuildServiceInstanceForBrowserContext(
     content::BrowserContext* context) const {
-  if (!g_browser_process->safe_browsing_service()) {
     return nullptr;
-  }
-  Profile* profile = Profile::FromBrowserContext(context);
-
-  return std::make_unique<RealTimeUrlLookupService>(
-      GetURLLoaderFactory(context),
-      VerdictCacheManagerFactory::GetForProfile(profile),
-      base::BindRepeating(&safe_browsing::GetUserPopulationForProfile, profile),
-      profile->GetPrefs(),
-      std::make_unique<SafeBrowsingPrimaryAccountTokenFetcher>(
-          IdentityManagerFactory::GetForProfile(profile)),
-      base::BindRepeating(&safe_browsing::SyncUtils::
-                              AreSigninAndSyncSetUpForSafeBrowsingTokenFetches,
-                          SyncServiceFactory::GetForProfile(profile),
-                          IdentityManagerFactory::GetForProfile(profile)),
-      profile->IsOffTheRecord(),
-      base::BindRepeating(
-          &RealTimeUrlLookupServiceFactory::GetVariationsService),
-      base::BindRepeating(&RealTimeUrlLookupServiceFactory::
-                              GetMinAllowedTimestampForReferrerChains,
-                          profile),
-      SafeBrowsingNavigationObserverManagerFactory::GetForBrowserContext(
-          profile),
-      WebUIContentInfoSingleton::GetInstance(),
-      ClientSideDetectionIntelligentScanDelegateFactory::GetForProfile(profile),
-      base::BindRepeating(&RealTimeUrlLookupServiceFactory::GetNetworkContext,
-                          profile));
 }
 
 scoped_refptr<network::SharedURLLoaderFactory>

@@ -26,7 +26,6 @@ class DataProtectionUrlLookupServiceFactory
  private:
   DataProtectionUrlLookupServiceFactory();
   ~DataProtectionUrlLookupServiceFactory() override;
-  friend base::NoDestructor<DataProtectionUrlLookupServiceFactory>;
 
   // BrowserContextKeyedServiceFactory:
   std::unique_ptr<KeyedService> BuildServiceInstanceForBrowserContext(

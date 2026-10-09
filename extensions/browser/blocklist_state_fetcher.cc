@@ -40,25 +40,9 @@ BlocklistStateFetcher::~BlocklistStateFetcher() {
 void BlocklistStateFetcher::Request(const std::string& id,
                                     RequestCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!safe_browsing_config_) {
-    std::optional<safe_browsing::SBProtocolConfig> config =
-        ExtensionsBrowserClient::Get()->GetSBProtocolConfig();
-    if (config) {
-      SetSafeBrowsingConfig(*config);
-    } else {
-      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-          FROM_HERE, base::BindOnce(std::move(callback), BLOCKLISTED_UNKNOWN));
-      return;
-    }
-  }
-
-  bool request_already_sent = callbacks_.contains(id);
-  callbacks_.insert(std::make_pair(id, std::move(callback)));
-  if (request_already_sent) {
-    return;
-  }
-
-  SendRequest(id);
+  // The Google reputation client is unavailable; complete without networking.
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), BLOCKLISTED_UNKNOWN));
 }
 
 void BlocklistStateFetcher::SendRequest(const std::string& id) {
@@ -69,8 +53,7 @@ void BlocklistStateFetcher::SendRequest(const std::string& id) {
   std::string request_str;
   request.SerializeToString(&request_str);
 
-  GURL request_url = GURL(safe_browsing::GetReportUrl(
-      *safe_browsing_config_, "clientreport/crx-list-info"));
+  GURL request_url = GURL();
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("extension_blacklist", R"(
         semantics {
@@ -136,8 +119,7 @@ void BlocklistStateFetcher::SendRequest(const std::string& id) {
 
 void BlocklistStateFetcher::SetSafeBrowsingConfig(
     const safe_browsing::SBProtocolConfig& config) {
-  safe_browsing_config_ =
-      std::make_unique<safe_browsing::SBProtocolConfig>(config);
+  // Kept as a no-op API for callers; BYOD never starts the remote fetcher.
 }
 
 void BlocklistStateFetcher::OnURLLoaderComplete(

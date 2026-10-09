@@ -143,6 +143,7 @@
 #include "net/test/url_request/url_request_failed_job.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/traffic_annotation/byod_google_services.h"
 #include "net/url_request/redirect_util.h"
 #include "net/url_request/referrer_policy.h"
 #include "net/url_request/static_http_user_agent_settings.h"
@@ -728,6 +729,42 @@ class URLRequestTest : public PlatformTest, public WithTaskEnvironment {
   std::unique_ptr<URLRequestContext> default_context_;
   base::ScopedTempDir temp_dir_;
 };
+
+TEST_F(URLRequestTest, ByodGoogleServiceFailsBeforeNetwork) {
+  TestDelegate delegate;
+  auto request = default_context().CreateRequest(
+      GURL("https://127.0.0.1:9/"), DEFAULT_PRIORITY, &delegate,
+      DefineNetworkTrafficAnnotation("metrics_report_uma", "BYOD guard test"),
+      net::handles::kInvalidNetworkHandle);
+  request->Start();
+  delegate.RunUntilComplete();
+  EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, request->status());
+  EXPECT_EQ(0, delegate.bytes_received());
+  EXPECT_TRUE(request->GetResponseRemoteEndpoint().address().empty());
+}
+
+TEST_F(URLRequestTest, ByodGoogleServiceDoesNotBlockOrdinaryWebsites) {
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      TRAFFIC_ANNOTATION_FOR_TESTS, GURL("https://www.google.com/")));
+  const auto updater =
+      DefineNetworkTrafficAnnotation("update_client", "BYOD guard test");
+  EXPECT_TRUE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://update.googleapis.com/service/update2")));
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://extensions.example.test/update.xml")));
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://notgoogle.com/update.xml")));
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://google.com.example.test/update.xml")));
+  EXPECT_TRUE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://www.google.co.uk/update.xml")));
+  EXPECT_TRUE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://google.com./update.xml")));
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      updater, GURL("https://google.co.uk.example.test/update.xml")));
+  EXPECT_FALSE(IsByodGoogleServiceTraffic(
+      TRAFFIC_ANNOTATION_FOR_TESTS, GURL("https://www.google.co.uk/")));
+}
 
 TEST_F(URLRequestTest, AboutBlankTest) {
   TestDelegate d;

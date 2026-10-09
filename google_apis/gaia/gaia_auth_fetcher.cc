@@ -24,6 +24,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/types/optional_util.h"
 #include "base/values.h"
 #include "google_apis/credentials_mode.h"
@@ -249,65 +250,15 @@ void GaiaAuthFetcher::CreateAndStartGaiaFetcher(
     network::mojom::CredentialsMode credentials_mode,
     const net::NetworkTrafficAnnotationTag& traffic_annotation) {
   DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
-
-  auto resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = gaia_gurl;
+  // BYOD has no Google browser identity. Preserve asynchronous completion and
+  // destruction cancellation without constructing any network request.
   original_url_ = gaia_gurl;
-
-  if (credentials_mode != network::mojom::CredentialsMode::kOmit &&
-      credentials_mode !=
-          network::mojom::CredentialsMode::kOmitBug_775438_Workaround) {
-    CHECK(gaia::HasGaiaSchemeHostPort(gaia_gurl) ||
-          gaia_gurl.DomainIs("googleapis.com") ||
-          GaiaConfig::GetInstance() != nullptr)
-        << gaia_gurl;
-
-    url::Origin origin = url::Origin::Create(gaia_gurl);
-    resource_request->site_for_cookies =
-        net::SiteForCookies::FromOrigin(origin);
-    resource_request->trusted_params =
-        network::ResourceRequest::TrustedParams();
-    resource_request->trusted_params->isolation_info =
-        net::IsolationInfo::CreateForInternalRequest(origin);
-  }
-
-  if (!body.empty()) {
-    resource_request->method = "POST";
-  }
-
-  resource_request->headers = request_headers;
-
-  resource_request->credentials_mode = credentials_mode;
-
-  url_loader_ = network::SimpleURLLoader::Create(std::move(resource_request),
-                                                 traffic_annotation);
-  if (!body.empty()) {
-    DCHECK(!body_content_type.empty());
-    url_loader_->AttachStringForUpload(body, body_content_type);
-  }
-
-  url_loader_->SetAllowHttpErrorResults(true);
-
-  VLOG(2) << "Gaia fetcher URL: " << gaia_gurl.spec();
-  VLOG(2) << "Gaia fetcher headers: " << request_headers.ToString();
-  VLOG(2) << "Gaia fetcher body: " << body;
-
-  // Fetchers are sometimes cancelled because a network change was detected,
-  // especially at startup and after sign-in on ChromeOS. Retrying once should
-  // be enough in those cases; let the fetcher retry up to 3 times just in case.
-  // http://crbug.com/163710
-  url_loader_->SetRetryOptions(
-      3, network::SimpleURLLoader::RETRY_ON_NETWORK_CHANGE);
-
   fetch_pending_ = true;
-
-  // Unretained is OK below as |url_loader_| is owned by this.
-  url_loader_->DownloadToString(
-      url_loader_factory_.get(),
-      base::BindOnce(&GaiaAuthFetcher::OnURLLoadComplete,
-                     base::Unretained(this)),
-      // Limit to 1 MiB.
-      1024 * 1024);
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&GaiaAuthFetcher::OnURLLoadCompleteInternal,
+                     disabled_request_factory_.GetWeakPtr(),
+                     net::ERR_BLOCKED_BY_CLIENT, 0, std::string()));
 }
 
 // static

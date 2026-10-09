@@ -11,7 +11,7 @@ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {loadTimeData} from '../i18n_setup.js';
 import {routes} from '../route.js';
-import {RouteObserverMixinLit} from '../router.js';
+import {RouteObserverMixinLit, Router} from '../router.js';
 import type {Route, SettingsRoutes} from '../router.js';
 import type {SettingsPlugin} from '../settings_main/settings_plugin.js';
 import {SearchableViewContainerMixinLit} from '../settings_page/searchable_view_container_mixin_lit.js';
@@ -55,6 +55,12 @@ export class SettingsPeoplePageIndexElement extends
       loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos');
 
   override currentRouteChanged(newRoute: Route, oldRoute?: Route) {
+    // Old bookmarks/deep links must not expose removed Google service pages.
+    if ([routes.SYNC, routes.SYNC_ADVANCED, routes.ACCOUNT,
+         routes.GOOGLE_SERVICES, routes.SIGN_OUT].includes(newRoute)) {
+      Router.getInstance().navigateTo(routes.PEOPLE);
+      return;
+    }
     super.currentRouteChanged(newRoute, oldRoute);
 
     // Need to wait for currentRouteChanged observers on child views to run

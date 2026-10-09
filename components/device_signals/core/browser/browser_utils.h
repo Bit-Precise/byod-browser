@@ -22,12 +22,6 @@ namespace device_signals {
 
 bool GetChromeRemoteDesktopAppBlocked(PolicyBlocklistService* service);
 
-std::optional<safe_browsing::PasswordProtectionTrigger>
-GetPasswordProtectionWarningTrigger(PrefService* profile_prefs);
-
-safe_browsing::SafeBrowsingState GetSafeBrowsingProtectionLevel(
-    PrefService* profile_prefs);
-
 std::optional<std::string> TryGetEnrollmentDomain(
     policy::CloudPolicyManager* manager);
 

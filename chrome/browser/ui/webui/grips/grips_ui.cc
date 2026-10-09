@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/process/kill.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
@@ -371,13 +372,18 @@ class GripsExamNetworkMessageHandler : public content::WebUIMessageHandler {
     }
     // The trusted HTTPS shell is the only bridge sender. Never allow it to
     // choose a reporting origin or inject headers/path segments.
-    if (!audit_session_id || audit_session_id->empty() ||
+    // Older control planes omit both fields. They must still configure exam
+    // routing and lifecycle; a partial or malformed audit configuration is not
+    // silently downgraded to unaudited operation.
+    const bool has_audit = dict->contains("auditSessionId") ||
+                           dict->contains("auditToken");
+    if (has_audit && (!audit_session_id || audit_session_id->empty() ||
         audit_session_id->size() > 128 ||
         audit_session_id->find_first_not_of(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos ||
         !audit_token || audit_token->empty() || audit_token->size() > 512 ||
         audit_token->find_first_not_of(
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos)
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos))
       return;
     Profile* profile = Profile::FromWebUI(web_ui());
     if (!profile) {
@@ -393,7 +399,8 @@ class GripsExamNetworkMessageHandler : public content::WebUIMessageHandler {
         SetByodTunnelConfig(std::move(config));
     ConfigureExamObserver(web_ui()->GetWebContents(), *source_host,
                            std::move(allowed_origins), exam_ends_at_ms,
-                           *audit_session_id, *audit_token);
+                           audit_session_id ? *audit_session_id : std::string(),
+                           audit_token ? *audit_token : std::string());
   }
 
   void HandleClear(const base::ListValue&) {
@@ -596,6 +603,7 @@ class GripsExamCallbackObserver
 
   void HandleBackground() {
     if (!active_exam_ || web_contents()->IsBeingDestroyed() ||
+        web_contents()->IsCrashed() ||
         web_contents()->GetVisibility() != content::Visibility::HIDDEN)
       return;
     LeaveExam("background");
@@ -646,7 +654,25 @@ class GripsExamCallbackObserver
 
   void WebContentsDestroyed() override { LeaveExam("tab_closed"); }
 
-  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
+  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus status) override {
+    if (status != base::TERMINATION_STATUS_NORMAL_TERMINATION) {
+      // A real crash can hide the page as part of displaying the sad tab.
+      // Report the actual loss before any deferred visibility notification.
+      LeaveExam("renderer_gone");
+      return;
+    }
+    // Fast tab shutdown can terminate the renderer before destroying this
+    // WebContents. Let synchronous tab destruction report tab_closed first;
+    // only a surviving tab should report a lost/crashed renderer.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GripsExamCallbackObserver::HandleRendererGone,
+                       weak_factory_.GetWeakPtr()));
+  }
+
+  void HandleRendererGone() {
+    if (!web_contents() || web_contents()->IsBeingDestroyed())
+      return;
     LeaveExam("renderer_gone");
   }
 
@@ -709,13 +735,16 @@ class GripsExamCallbackObserver
                      std::optional<double> exam_ends_at_ms,
                      const std::string& audit_session_id,
                      const std::string& audit_token) {
-    if (!audit_ || audit_->session_id() != audit_session_id) {
+    if (audit_session_id.empty()) {
+      LeaveExam("session_replaced");
+      audit_.reset();
+    } else if (!audit_ || audit_->session_id() != audit_session_id) {
       LeaveExam("session_replaced");
       audit_ = base::MakeRefCounted<GripsAuditReporter>(
           web_contents()->GetBrowserContext()->GetDefaultStoragePartition()->
               GetURLLoaderFactoryForBrowserProcess(), audit_session_id, audit_token);
     }
-    if (!auditing_) {
+    if (audit_ && !auditing_) {
       auditing_ = true;
       base::DictValue event;
       event.Set("type", "exam_entered");

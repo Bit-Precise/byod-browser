@@ -100,20 +100,6 @@ void BrowserLaunchEventUploaderDesktop::DeferUpload(
 }
 
 void BrowserLaunchEventUploaderDesktop::OnProfileAdded(Profile* profile) {
-  if (!enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
-          profile)) {
-    return;
-  }
-
-  auto context = helper_.PrepareUpload(/*per_profile=*/false);
-  if (!context) {
-    // Keep observing until an eligible profile is loaded or browser shutdown
-    // occurs.
-    return;
-  }
-
-  profile_manager_observation_.Reset();
-  DoUpload(*context, event_, std::move(upload_callback_));
 }
 
 void BrowserLaunchEventUploaderDesktop::OnProfileManagerDestroying() {

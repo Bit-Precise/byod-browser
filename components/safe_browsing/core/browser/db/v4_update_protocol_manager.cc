@@ -9,7 +9,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "components/safe_browsing/core/browser/db/sb_protocol_manager_util.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safe_browsing/core/common/utils.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
@@ -21,7 +20,6 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 
 using base::Time;
-using enum safe_browsing::ExtendedReportingLevel;
 
 namespace {
 
@@ -69,18 +67,9 @@ namespace safe_browsing {
 
 ChromeClientInfo::SafeBrowsingReportingPopulation GetReportingLevelProtoValue(
     ExtendedReportingLevel reporting_level) {
-  switch (reporting_level) {
-    case SBER_LEVEL_OFF:
-      return ChromeClientInfo::OPT_OUT;
-    case SBER_LEVEL_LEGACY:
-      return ChromeClientInfo::EXTENDED;
-    case SBER_LEVEL_SCOUT:
-      return ChromeClientInfo::SCOUT;
-    case SBER_LEVEL_ENHANCED_PROTECTION:
-      return ChromeClientInfo::ENHANCED_PROTECTION;
-    default:
-      NOTREACHED() << "Unexpected reporting_level!";
-  }
+  // Google reporting is disabled. This shared wire-format helper must not
+  // depend on preferences that are absent with safe_browsing_mode=0.
+  return ChromeClientInfo::OPT_OUT;
 }
 
 V4UpdateProtocolManager::V4UpdateProtocolManager(

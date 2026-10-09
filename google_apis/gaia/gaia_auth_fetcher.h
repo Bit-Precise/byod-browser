@@ -14,6 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -309,6 +310,8 @@ class COMPONENT_EXPORT(GOOGLE_APIS) GaiaAuthFetcher {
   bool standard_device_bound_session_credentials_ = false;
 
   bool fetch_pending_ = false;
+
+  base::WeakPtrFactory<GaiaAuthFetcher> disabled_request_factory_{this};
 
   friend class GaiaAuthFetcherTest;
   FRIEND_TEST_ALL_PREFIXES(GaiaAuthFetcherTest, CaptchaParse);

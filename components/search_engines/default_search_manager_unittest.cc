@@ -150,6 +150,31 @@ class DefaultSearchManagerTest : public testing::Test {
   search_engines::SearchEnginesTestEnvironment search_engines_test_environment_;
 };
 
+TEST_F(DefaultSearchManagerTest, ByodNoImplicitGoogleSearch) {
+  auto manager = create_manager();
+  EXPECT_EQ(nullptr, manager->GetDefaultSearchEngine(nullptr));
+  EXPECT_EQ(nullptr, manager->GetDefaultSearchEngineIgnoringExtensions());
+}
+
+TEST_F(DefaultSearchManagerTest, ByodPreservesCustomSearch) {
+  auto manager = create_manager();
+  auto data = GenerateDummyTemplateURLData("school-search");
+  manager->SetUserSelectedDefaultSearchEngine(*data);
+  ASSERT_NE(nullptr, manager->GetDefaultSearchEngine(nullptr));
+  ExpectSimilar(data.get(), manager->GetDefaultSearchEngine(nullptr));
+}
+
+TEST_F(DefaultSearchManagerTest, ByodDoesNotActivateStoredGoogle) {
+  auto manager = create_manager();
+  auto data = TemplateURLDataFromPrepopulatedEngine(
+      TemplateURLPrepopulateData::google);
+  manager->SetUserSelectedDefaultSearchEngine(*data);
+  EXPECT_EQ(nullptr, manager->GetDefaultSearchEngine(nullptr));
+  EXPECT_EQ(nullptr, manager->GetDefaultSearchEngineIgnoringExtensions());
+  EXPECT_FALSE(pref_service()->GetDict(
+      DefaultSearchManager::kDefaultSearchProviderDataPrefName).empty());
+}
+
 // Test that a TemplateURLData object is properly written and read from Prefs.
 TEST_F(DefaultSearchManagerTest, ReadAndWritePref) {
   auto manager = create_manager();

@@ -309,10 +309,6 @@ void MultipartUploadRequest::SendRequest() {
   resource_request->url = base_url_;
   resource_request->method = "POST";
   SetRequestHeaders(resource_request.get());
-#if !BUILDFLAG(IS_IOS)
-  safe_browsing::WebUIContentInfoSingleton::GetInstance()
-      ->AddHeadersToDeepScanRequests(request_token_, resource_request->headers);
-#endif
 
   switch (data_source_) {
     case STRING:

@@ -24,7 +24,6 @@
 #include "base/values.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/gurl.h"
 
@@ -211,9 +210,6 @@ class TailoredSecurityService : public KeyedService {
   FRIEND_TEST_ALL_PREFIXES(TailoredSecurityServiceTest,
                            RetryLogicTimestampUpdateCallbackRecordsStartTime);
   friend class TailoredSecurityTabHelperTest;
-
-  // Saves the supplied `TailoredSecurityRetryState` to preferences.
-  void SaveRetryState(TailoredSecurityRetryState state);
 
   // Stores pointer to `IdentityManager` instance. It must outlive the
   // `TailoredSecurityService` and can be null during tests.

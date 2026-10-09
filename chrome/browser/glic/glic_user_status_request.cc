@@ -64,11 +64,6 @@ std::vector<std::string> GlicUserStatusRequest::GetExtraRequestHeaders() const {
     return headers;
   }
 
-  // The endpoint is always a Google property.
-  headers.push_back(
-      base::StrCat({variations::kClientDataHeader, ": ",
-                    variations->headers_map.at(
-                        variations::mojom::GoogleWebVisibility::FIRST_PARTY)}));
 
   return headers;
 }

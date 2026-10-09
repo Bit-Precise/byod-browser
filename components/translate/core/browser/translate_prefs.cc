@@ -187,16 +187,11 @@ std::string TranslatePrefs::MapPreferenceName(std::string_view pref_name) {
 }
 
 bool TranslatePrefs::IsOfferTranslateEnabled() const {
-  return prefs_->GetBoolean(prefs::kOfferTranslateEnabled);
+  return false;
 }
 
 bool TranslatePrefs::IsTranslateAllowedByPolicy() const {
-  const PrefService::Preference* const pref =
-      prefs_->FindPreference(prefs::kOfferTranslateEnabled);
-  DCHECK(pref);
-  DCHECK(pref->GetValue()->is_bool());
-
-  return pref->GetValue()->GetBool() || !pref->IsManaged();
+  return false;
 }
 
 void TranslatePrefs::SetCountry(std::string_view country) {

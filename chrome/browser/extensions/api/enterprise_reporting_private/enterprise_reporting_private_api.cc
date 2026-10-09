@@ -260,16 +260,8 @@ api::enterprise_reporting_private::ContextInfo ToContextInfo(
       signals.chrome_remote_desktop_app_blocked;
   info.os_firewall = ToInfoSettingValue(signals.os_firewall);
   info.system_dns_servers = std::move(signals.system_dns_servers);
-  switch (signals.realtime_url_check_mode) {
-    case enterprise_connectors::REAL_TIME_CHECK_DISABLED:
       info.realtime_url_check_mode = extensions::api::
           enterprise_reporting_private::RealtimeUrlCheckMode::kDisabled;
-      break;
-    case enterprise_connectors::REAL_TIME_CHECK_FOR_MAINFRAME_ENABLED:
-      info.realtime_url_check_mode = extensions::api::
-          enterprise_reporting_private::RealtimeUrlCheckMode::kEnabledMainFrame;
-      break;
-  }
   info.browser_version = std::move(signals.browser_version);
   info.built_in_dns_client_enabled = signals.built_in_dns_client_enabled;
   info.enterprise_profile_id = signals.enterprise_profile_id;

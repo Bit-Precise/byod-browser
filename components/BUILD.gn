@@ -451,7 +451,6 @@ test("components_unittests") {
       "//components/browser_sync:unit_tests",
       "//components/enterprise:unit_tests",
       "//components/enterprise/common:unit_tests",
-      "//components/enterprise/connectors/core:cloud_content_scanning_unit_tests",
       "//components/enterprise/connectors/core:unit_tests",
       "//components/enterprise/data_protection:unit_tests",
       "//components/enterprise/isolated_mode:unit_tests",

@@ -313,12 +313,7 @@ bool LeakDetectionCheck::IsURLBlockedByPolicy(
     const PrefService& prefs,
     const GURL& form_url,
     autofill::SavePasswordProgressLogger* logger) {
-  bool is_blocked = safe_browsing::IsURLAllowlistedByPolicy(form_url, prefs);
-  if (is_blocked && logger) {
-    logger->LogMessage(autofill::SavePasswordProgressLogger::
-                           STRING_LEAK_DETECTION_URL_BLOCKED);
-  }
-  return is_blocked;
+  return false;
 }
 
 }  // namespace password_manager

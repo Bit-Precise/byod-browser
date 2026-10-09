@@ -166,41 +166,11 @@ void AddVariationsHeaderForPrefetch(
     bool is_first_party_context_for_variations) {
   CHECK(prefetch_request.browser_context());
 
-  // Add X-Client-Data header with experiment IDs from field trials.
-  if (std::optional<std::string> value =
-          variations::GetVariationsHeaderValueToAppend(
-              request_url,
-              prefetch_request.browser_context()->IsOffTheRecord()
-                  ? variations::InIncognito::kYes
-                  : variations::InIncognito::kNo,
-              variations::SignedIn::kNo,
-              is_first_party_context_for_variations)) {
-    cors_exempt_headers.SetHeaderIfMissing(variations::kClientDataHeader,
-                                           *value);
-  }
 }
 
 void UpdateVariationsHeaderForPrefetch(
     network::ResourceRequest& resource_request,
     const PrefetchRequest& prefetch_request) {
-  // Remove `variations::kClientDataHeader` from `resource_request_->headers`,
-  // to keep the existing behavior. While `AddVariationsHeaderForPrefetch()`
-  // adds `variations::kClientDataHeader` to
-  // `resource_request->cors_exempt_headers`, it's also possible that
-  // `variations::kClientDataHeader` is added to `resource_request_->headers`
-  // via `request().additional_headers()`.
-  //
-  // TODO(crbug.com/467177773): The processing of
-  // `variations::kClientDataHeader` is separated from other headers, to keep
-  // the behavior of `variations::kClientDataHeader` during the main fixes for
-  // crbug.com/467177773. The behavior of `variations::kClientDataHeader` should
-  // be fixed together with other related bugs, by e.g. restructuring
-  // `variations::AppendVariationsHeader()` and plumbing the
-  // `variations::kClientDataHeader` removal and modification to
-  // `FollowRedirect()`.
-  // TODO(crbug.com/454082776): Remove `variations::kClientDataHeader` from
-  // `resource_request->cors_exempt_headers`.
-  resource_request.headers.RemoveHeader(variations::kClientDataHeader);
   AddVariationsHeaderForPrefetch(resource_request.cors_exempt_headers,
                                  resource_request.url, prefetch_request,
                                  IsFirstPartyContext(resource_request));

@@ -161,12 +161,12 @@ base::TimeDelta ChromeConfigurator::UpdateDelay() const {
 
 std::vector<GURL> ChromeConfigurator::UpdateUrl() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return configurator_impl_.UpdateUrl();
+  return {};
 }
 
 std::vector<GURL> ChromeConfigurator::PingUrl() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return configurator_impl_.PingUrl();
+  return {};
 }
 
 std::string ChromeConfigurator::GetProdId() const {

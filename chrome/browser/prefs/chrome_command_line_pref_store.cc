@@ -27,6 +27,7 @@
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safe_browsing/core/common/safebrowsing_switches.h"
 #include "components/sync/base/pref_names.h"
+#include "components/signin/public/base/signin_pref_names.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/buildflags/buildflags.h"
 #include "net/base/port_util.h"
@@ -114,6 +115,12 @@ ChromeCommandLinePrefStore::ChromeCommandLinePrefStore(
   ApplySSLSwitches();
   ApplyBackgroundModeSwitches();
   ApplyExplicitlyAllowedPortSwitch();
+  // These services are absent in BYOD. Overlay settings without modifying an
+  // existing profile's stored preferences or its Connect/OIDC website data.
+  SetValue(prefs::kSigninAllowed, base::Value(false),
+           WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
+  SetValue(prefs::kSigninAllowedOnNextStartup, base::Value(false),
+           WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
 }
 
 ChromeCommandLinePrefStore::~ChromeCommandLinePrefStore() = default;

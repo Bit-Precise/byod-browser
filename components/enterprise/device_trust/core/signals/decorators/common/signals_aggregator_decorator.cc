@@ -16,32 +16,11 @@
 #include "components/device_signals/core/browser/signals_aggregator.h"
 #include "components/device_signals/core/browser/signals_types.h"
 #include "components/device_signals/core/common/signals_constants.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 
 namespace enterprise_connectors {
 
 namespace {
 
-// Converts PasswordProtectionTrigger to the Device Trust payload values:
-// unset=0, off=1, password reuse=2, and phishing reuse=3.
-int ConvertPasswordProtectionTrigger(
-    const std::optional<safe_browsing::PasswordProtectionTrigger>& trigger) {
-  if (!trigger.has_value()) {
-    return static_cast<int>(DeviceTrustPasswordProtectionTrigger::kUnset);
-  }
-  switch (trigger.value()) {
-    case safe_browsing::PASSWORD_PROTECTION_OFF:
-      return static_cast<int>(DeviceTrustPasswordProtectionTrigger::kOff);
-    case safe_browsing::PASSWORD_REUSE:
-      return static_cast<int>(
-          DeviceTrustPasswordProtectionTrigger::kPasswordReuse);
-    case safe_browsing::PHISHING_REUSE:
-      return static_cast<int>(
-          DeviceTrustPasswordProtectionTrigger::kPhishingReuse);
-    case safe_browsing::PASSWORD_PROTECTION_TRIGGER_MAX:
-      NOTREACHED();
-  }
-}
 
 base::ListValue ToListValue(const std::vector<std::string>& values) {
   base::ListValue list;
@@ -132,16 +111,10 @@ void AddProfileSignals(
                    ToListValue(profile_signals.profile_affiliation_ids));
   signals_dict.Set(device_signals::names::kChromeRemoteDesktopAppBlocked,
                    profile_signals.chrome_remote_desktop_app_blocked);
-  signals_dict.Set(
-      device_signals::names::kSafeBrowsingProtectionLevel,
-      static_cast<int>(profile_signals.safe_browsing_protection_level));
   signals_dict.Set(device_signals::names::kSiteIsolationEnabled,
                    profile_signals.site_isolation_enabled);
   signals_dict.Set(device_signals::names::kRealtimeUrlCheckMode,
                    static_cast<int>(profile_signals.realtime_url_check_mode));
-  signals_dict.Set(device_signals::names::kPasswordProtectionWarningTrigger,
-                   ConvertPasswordProtectionTrigger(
-                       profile_signals.password_protection_warning_trigger));
 
   AddOptionalString(signals_dict, device_signals::names::kUserEnrollmentDomain,
                     profile_signals.profile_enrollment_domain);

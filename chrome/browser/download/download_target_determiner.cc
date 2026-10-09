@@ -1353,14 +1353,7 @@ base::FilePath DownloadTargetDeterminer::GetFileDisplayName() const {
 
 std::optional<base::Time>
 DownloadTargetDeterminer::GetLastDownloadBypassTimestamp() const {
-  safe_browsing::SafeBrowsingMetricsCollector* metrics_collector =
-      safe_browsing::SafeBrowsingMetricsCollectorFactory::GetForProfile(
-          GetProfile());
-  // metrics_collector can be null in incognito.
-  return metrics_collector ? metrics_collector->GetLatestEventTimestamp(
-                                 safe_browsing::SafeBrowsingMetricsCollector::
-                                     EventType::DANGEROUS_DOWNLOAD_BYPASS)
-                           : std::nullopt;
+  return std::nullopt;
 }
 
 void DownloadTargetDeterminer::OnDownloadDestroyed(

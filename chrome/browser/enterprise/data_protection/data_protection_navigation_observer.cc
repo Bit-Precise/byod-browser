@@ -239,9 +239,7 @@ void LogVerdictSource(
 
 bool IsScreenshotAllowedByDataControls(content::BrowserContext* context,
                                        const GURL& url) {
-  auto* rules = data_controls::ChromeRulesServiceFactory::GetInstance()
-                    ->GetForBrowserContext(context);
-  return rules ? !rules->BlockScreenshots(url) : true;
+  return true;
 }
 
 }  // namespace

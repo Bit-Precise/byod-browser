@@ -5866,19 +5866,11 @@ ToastController* RenderViewContextMenu::GetToastController() const {
 }
 
 bool RenderViewContextMenu::CanTranslate(bool menu_logging) {
-  ChromeTranslateClient* chrome_translate_client =
-      ChromeTranslateClient::FromWebContents(embedder_web_contents_);
-  return chrome_translate_client &&
-         chrome_translate_client->GetTranslateManager()->CanManuallyTranslate(
-             menu_logging);
+  return false;
 }
 
 bool RenderViewContextMenu::CanPartiallyTranslateTargetLanguage() {
-  ChromeTranslateClient* chrome_translate_client =
-      ChromeTranslateClient::FromWebContents(embedder_web_contents_);
-  return chrome_translate_client &&
-         chrome_translate_client->GetTranslateManager()
-             ->CanPartiallyTranslateTargetLanguage();
+  return false;
 }
 
 void RenderViewContextMenu::MaybePrepareForLensQuery() {

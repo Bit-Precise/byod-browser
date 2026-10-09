@@ -25,7 +25,6 @@
 #include "base/values.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_history.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_item_warning_data.h"
@@ -190,21 +189,6 @@ void MaybeReportBypassAction(download::DownloadItem* file,
 void MaybeTriggerTrustSafetySurvey(download::DownloadItem* file,
                                    WarningSurface surface,
                                    WarningAction action) {
-  CHECK(file);
-  CHECK(surface == WarningSurface::DOWNLOADS_PAGE ||
-        surface == WarningSurface::DOWNLOAD_PROMPT);
-  CHECK(action == WarningAction::PROCEED || action == WarningAction::DISCARD);
-  if (Profile* profile = Profile::FromBrowserContext(
-          content::DownloadItemUtils::GetBrowserContext(file));
-      profile &&
-      safe_browsing::IsSafeBrowsingSurveysEnabled(*profile->GetPrefs())) {
-    TrustSafetySentimentService* trust_safety_sentiment_service =
-        TrustSafetySentimentServiceFactory::GetForProfile(profile);
-    if (trust_safety_sentiment_service) {
-      trust_safety_sentiment_service->InteractedWithDownloadWarningUI(surface,
-                                                                      action);
-    }
-  }
 }
 
 void RecordDownloadsPageValidatedHistogram(download::DownloadItem* item) {
@@ -566,20 +550,6 @@ void DownloadsDOMHandler::RemoveDownloads(const DownloadVector& to_remove) {
   IdSet ids;
 
   for (download::DownloadItem* download : to_remove) {
-    bool should_remove = download->IsDangerous() || download->IsInsecure();
-    if (!should_remove) {
-      download::DownloadDangerType danger_type = download->GetDangerType();
-      should_remove =
-          danger_type == download::DOWNLOAD_DANGER_TYPE_ASYNC_SCANNING ||
-          danger_type ==
-              download::DOWNLOAD_DANGER_TYPE_ASYNC_LOCAL_PASSWORD_SCANNING;
-    }
-    if (should_remove) {
-      // Don't allow users to revive dangerous downloads; just nuke 'em.
-      download->Remove();
-      continue;
-    }
-
     DownloadItemModel item_model(download);
     if (!item_model.ShouldShowInUi() ||
         download->GetState() == download::DownloadItem::IN_PROGRESS) {

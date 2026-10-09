@@ -16,7 +16,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/permissions/quiet_notification_permission_ui_config.h"
 #include "chrome/browser/permissions/quiet_notification_permission_ui_state.h"
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/v5_get_hash_protocol_manager_factory.h"
 #include "chrome/common/chrome_features.h"
 #include "components/permissions/permission_request.h"
@@ -163,9 +162,6 @@ void ContextualNotificationPermissionUiSelector::SelectUiToUse(
 }
 
 void ContextualNotificationPermissionUiSelector::Cancel() {
-  // The computation either finishes synchronously above, or is waiting on the
-  // Safe Browsing check.
-  safe_browsing_request_.reset();
 }
 
 bool ContextualNotificationPermissionUiSelector::IsPermissionRequestSupported(
@@ -195,24 +191,14 @@ void ContextualNotificationPermissionUiSelector::OnSiteReputationReady(
   std::optional<Decision> decision =
       GetDecisionBasedOnSiteReputation(reputation);
 
-  // If the PreloadData suggests this is an unacceptable site, ping Safe
-  // Browsing to verify; but do not ping if it is not warranted.
+  // If the PreloadData suggests this is an unacceptable site, assume it is
+  // correct, since we can't access safe browsing.
   if (!decision || (!decision->quiet_ui_reason && !decision->warning_reason)) {
     Notify(Decision::UseNormalUiAndShowNoWarning());
-    return;
+  } else {
+    // decision has a value, unwrap with .value()
+    Notify(decision.value());
   }
-
-  DCHECK(!safe_browsing_request_);
-  DCHECK(g_browser_process->safe_browsing_service());
-
-  // It is fine to use base::Unretained() here, as |safe_browsing_request_|
-  // guarantees not to fire the callback after its destruction.
-  safe_browsing_request_.emplace(
-      g_browser_process->safe_browsing_service()->database_manager(),
-      v5_get_hash_protocol_manager, base::DefaultClock::GetInstance(), origin,
-      base::BindOnce(&ContextualNotificationPermissionUiSelector::
-                         OnSafeBrowsingVerdictReceived,
-                     base::Unretained(this), *decision));
 }
 
 void ContextualNotificationPermissionUiSelector::OnSafeBrowsingVerdictReceived(

@@ -214,36 +214,6 @@ void PermissionRevocationRequest::OnSiteReputationReady(
         base::TimeTicks::Now() - crowd_deny_request_start_time_.value();
   }
 
-  if (site_reputation && !site_reputation->warning_only()) {
-    bool should_revoke_permission = false;
-    switch (site_reputation->notification_ux_quality()) {
-      case CrowdDenyPreloadData::SiteReputation::ABUSIVE_PROMPTS:
-      case CrowdDenyPreloadData::SiteReputation::ABUSIVE_CONTENT:
-        should_revoke_permission = NotificationsPermissionRevocationConfig::
-            IsAbusiveOriginPermissionRevocationEnabled();
-        break;
-      case CrowdDenyPreloadData::SiteReputation::DISRUPTIVE_BEHAVIOR:
-        should_revoke_permission = true;
-        break;
-      default:
-        should_revoke_permission = false;
-    }
-    DCHECK(g_browser_process->safe_browsing_service());
-    if (should_revoke_permission &&
-        g_browser_process->safe_browsing_service()) {
-      safe_browsing::V5GetHashProtocolManager* v5_manager =
-          safe_browsing::V5GetHashProtocolManagerFactory::GetForProfile(
-              profile_);
-      safe_browsing_request_.emplace(
-          g_browser_process->safe_browsing_service()->database_manager(),
-          v5_manager ? v5_manager->GetWeakPtr() : nullptr,
-          base::DefaultClock::GetInstance(), url::Origin::Create(origin_),
-          base::BindOnce(
-              &PermissionRevocationRequest::OnSafeBrowsingVerdictReceived,
-              weak_factory_.GetWeakPtr(), site_reputation));
-      return;
-    }
-  }
   NotifyCallback(Outcome::PERMISSION_NOT_REVOKED);
 }
 

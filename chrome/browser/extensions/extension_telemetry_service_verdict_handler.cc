@@ -76,14 +76,12 @@ void ExtensionTelemetryServiceVerdictHandler::PerformActionBasedOnVerdicts(
         blocklist_prefs::SetExtensionTelemetryServiceBlocklistState(
             extension_id, BitMapBlocklistState::NOT_BLOCKLISTED,
             extension_prefs_);
-        registrar_->OnBlocklistStateRemoved(extension_id);
         ReportOffstoreExtensionReenabled(current_state);
         break;
       case BLOCKLISTED_MALWARE:
         blocklist_prefs::SetExtensionTelemetryServiceBlocklistState(
             extension_id, BitMapBlocklistState::BLOCKLISTED_MALWARE,
             extension_prefs_);
-        registrar_->OnBlocklistStateAdded(extension_id);
         ReportOffstoreExtensionDisabled(
             ExtensionTelemetryDisableReason::kMalware);
         break;

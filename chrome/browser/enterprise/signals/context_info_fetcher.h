@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_ENTERPRISE_SIGNALS_CONTEXT_INFO_FETCHER_H_
 
 #include <string>
+#include <memory>
 #include <vector>
 
 #include "base/functional/callback_forward.h"
@@ -41,7 +42,6 @@ struct ContextInfo {
   std::vector<std::string> on_bulk_data_entry_providers;
   std::vector<std::string> on_print_providers;
   std::vector<std::string> on_security_event_providers;
-  enterprise_connectors::EnterpriseRealTimeUrlCheckMode realtime_url_check_mode;
   std::string browser_version;
   safe_browsing::SafeBrowsingState safe_browsing_protection_level;
   bool site_isolation_enabled;

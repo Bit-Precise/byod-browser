@@ -1174,6 +1174,7 @@ component("net") {
     "url_request/static_http_user_agent_settings.cc",
     "url_request/static_http_user_agent_settings.h",
     "url_request/storage_access_status_cache.h",
+    "traffic_annotation/byod_google_services.h",
     "url_request/url_request.cc",
     "url_request/url_request.h",
     "url_request/url_request_context.cc",

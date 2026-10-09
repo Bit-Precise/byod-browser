@@ -70,9 +70,6 @@ void SuggestInternalsHandler::OnRequestCreated(
       suggest_internals::mojom::Request::New();
   mojom_request->id = request_id;
   mojom_request->url = request->url;
-  std::string variations_header;
-  variations::GetVariationsHeader(*request, &variations_header);
-  mojom_request->data[variations::kClientDataHeader] = variations_header;
   mojom_request->data[request->method] = request->url.spec();
   mojom_request->status = suggest_internals::mojom::RequestStatus::kCreated;
   page_->OnRequestCreated(std::move(mojom_request));

@@ -1282,9 +1282,7 @@ ChromeAutofillClient::ChromeAutofillClient(content::WebContents* web_contents)
       ablation_study_(g_browser_process->local_state()),
       identity_credential_delegate_(web_contents),
       otp_field_detector_(std::make_unique<OtpFieldDetector>(this)),
-      email_verifier_delegate_(std::make_unique<EmailVerifierDelegate>(this)),
-      otp_phish_guard_delegate_(
-          std::make_unique<ChromeOtpPhishGuardDelegate>(web_contents)) {
+      email_verifier_delegate_(std::make_unique<EmailVerifierDelegate>(this)) {
   // Initialize StrikeDatabase so its cache will be loaded and ready to use
   // when requested by other Autofill classes.
   GetStrikeDatabase();

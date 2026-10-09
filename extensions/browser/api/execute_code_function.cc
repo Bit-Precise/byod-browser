@@ -175,12 +175,6 @@ ExtensionFunction::ResponseAction ExecuteCodeFunction::Run() {
     return RespondNow(Error(std::move(error)));
 
   if (details_->code) {
-    if (!IsWebView() && extension()) {
-      ExtensionsBrowserClient::Get()
-          ->GetSafeBrowsingDelegate()
-          ->NotifyExtensionApiTabExecuteScript(browser_context(),
-                                               extension_id(), *details_->code);
-    }
 
     if (!Execute(*details_->code, &error))
       return RespondNow(Error(std::move(error)));

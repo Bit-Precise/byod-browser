@@ -154,7 +154,7 @@ bool ChromeEnterpriseRealTimeUrlLookupService::
 
 bool ChromeEnterpriseRealTimeUrlLookupService::CanCheckSafeBrowsingDb() const {
   // Check database if safe browsing is enabled.
-  return safe_browsing::IsSafeBrowsingEnabled(*pref_service_);
+  return false;
 }
 
 bool ChromeEnterpriseRealTimeUrlLookupService::

@@ -49,7 +49,6 @@ ExtensionAllowlistFactory::ExtensionAllowlistFactory()
   DependsOn(ExtensionPrefsFactory::GetInstance());
   DependsOn(ExtensionRegistrarFactory::GetInstance());
   DependsOn(ExtensionRegistryFactory::GetInstance());
-  DependsOn(safe_browsing::SafeBrowsingMetricsCollectorFactory::GetInstance());
 }
 
 ExtensionAllowlistFactory::~ExtensionAllowlistFactory() = default;
@@ -60,8 +59,7 @@ ExtensionAllowlistFactory::BuildServiceInstanceForBrowserContext(
   // Use `new` because the constructor is private.
   return base::WrapUnique(new ExtensionAllowlist(
       context,
-      safe_browsing::SafeBrowsingMetricsCollectorFactory::GetForProfile(
-          Profile::FromBrowserContext(context))));
+      nullptr));
 }
 
 }  // namespace extensions

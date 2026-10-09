@@ -139,7 +139,6 @@ if (is_win || is_chromeos || is_mac) {
       "//chrome/browser",
       "//chrome/browser/safe_browsing:test_support",
       "//chrome/test:test_support",
-      "//components/safe_browsing/content/common:file_type_policies_test_support",
       "//components/safe_browsing/core/browser/db:test_database_manager",
       "//components/safe_browsing/core/browser/db:v5_get_hash_protocol_manager",
       "//content/public/browser",

@@ -209,7 +209,7 @@ namespace chrome {
 
 namespace {
 
-void OpenGripsLogin(Browser* browser) {
+void OpenGripsLogin(BrowserWindowInterface* browser) {
   browser->OpenURL(
       content::OpenURLParams(
           GURL("grips://login/"), content::Referrer(),

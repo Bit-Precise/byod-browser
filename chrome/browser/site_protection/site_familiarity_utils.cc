@@ -42,10 +42,6 @@ bool AreV8OptimizationsDisabledOnUnfamiliarSites(Profile* profile) {
 }
 
 bool CanEnableBlockingJavascriptOptimizersForUnfamiliarSites(Profile* profile) {
-  if (!safe_browsing::IsSafeBrowsingEnabled(*profile->GetPrefs())) {
-    // Blocking js-opt on unfamiliar sites requires Safe Browsing to be enabled.
-    return false;
-  }
 
   if (!base::FeatureList::IsEnabled(
           features::kProcessSelectionDeferringConditions)) {
@@ -71,13 +67,7 @@ bool CanEnableBlockingJavascriptOptimizersForUnfamiliarSites(Profile* profile) {
 }
 
 bool IsBlockFeaturesOnUnfamiliarSitesForEsbEnabled(Profile* profile) {
-  if (!profile) {
     return false;
-  }
-  return safe_browsing::IsEnhancedProtectionEnabled(*profile->GetPrefs()) &&
-         base::FeatureList::IsEnabled(
-             safe_browsing::
-                 kEnableBlockV8OptimizerOnUnfamiliarSitesForEsbClients);
 }
 
 base::TimeDelta GetMinAgeOfInitialVisitForFamiliarity(Profile* profile) {

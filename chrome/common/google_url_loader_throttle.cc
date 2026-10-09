@@ -26,10 +26,6 @@
 #include "services/network/public/mojom/x_frame_options.mojom.h"
 #include "url/origin.h"
 
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-#include "extensions/common/extension_urls.h"
-#endif
-
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 #include "chrome/common/bound_session_request_throttled_handler.h"
 #include "net/cookies/cookie_util.h"
@@ -71,16 +67,6 @@ RequestBoundSessionStatus GetRequestSingleBoundSessionStatus(
 
   // Short lived cookie has expired.
   return RequestBoundSessionStatus::kCoveredWithMissingCookie;
-}
-
-bool IsCoveredRequestBoundSessionStatus(RequestBoundSessionStatus status) {
-  switch (status) {
-    case RequestBoundSessionStatus::kNotCovered:
-      return false;
-    case RequestBoundSessionStatus::kCoveredWithFreshCookie:
-    case RequestBoundSessionStatus::kCoveredWithMissingCookie:
-      return true;
-  }
 }
 
 void RecordBoundSessionStatusMetrics(bool was_deferred,
@@ -174,71 +160,6 @@ void GoogleURLLoaderThrottle::DetachFromCurrentSequence() {}
 void GoogleURLLoaderThrottle::WillStartRequest(
     network::ResourceRequest* request,
     bool* defer) {
-  if (dynamic_params_->force_safe_search) {
-    GURL new_url;
-    safe_search_api::ForceGoogleSafeSearch(request->url, &new_url);
-    if (!new_url.is_empty()) {
-      request->url = new_url;
-    }
-  }
-
-  static_assert(safe_search_api::YOUTUBE_RESTRICT_OFF == 0,
-                "OFF must be first");
-  if (dynamic_params_->youtube_restrict >
-          safe_search_api::YOUTUBE_RESTRICT_OFF &&
-      dynamic_params_->youtube_restrict <
-          safe_search_api::YOUTUBE_RESTRICT_COUNT) {
-    safe_search_api::ForceYouTubeRestrict(
-        request->url, &request->cors_exempt_headers,
-        static_cast<safe_search_api::YouTubeRestrictMode>(
-            dynamic_params_->youtube_restrict));
-  }
-
-  if (!dynamic_params_->allowed_domains_for_apps.empty() &&
-      request->url.DomainIs("google.com")) {
-    request->cors_exempt_headers.SetHeader(
-        safe_search_api::kGoogleAppsAllowedDomains,
-        dynamic_params_->allowed_domains_for_apps);
-  }
-
-#if BUILDFLAG(IS_ANDROID)
-  if (!client_data_header_.empty() &&
-      google_util::IsGoogleAssociatedDomainUrl(request->url)) {
-    request->cors_exempt_headers.SetHeader(kCCTClientDataHeader,
-                                           client_data_header_);
-  }
-#endif
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  // `network::mojom::RequestDestination::kDocument` means that this is a
-  // navigation request.
-  is_main_frame_navigation_ =
-      request->is_outermost_main_frame &&
-      request->destination == network::mojom::RequestDestination::kDocument;
-  // TODO(crbug.com/372169462): `request->SendsCookies()` cannot be used for now
-  // because it excludes `kSameOrigin` requests.
-  sends_cookies_ =
-      request->credentials_mode == network::mojom::CredentialsMode::kInclude ||
-      request->credentials_mode == network::mojom::CredentialsMode::kSameOrigin;
-  if (sends_cookies_) {
-    RequestBoundSessionStatus status = GetRequestBoundSessionStatus(
-        request->url, dynamic_params_->bound_session_throttler_params);
-    if (IsCoveredRequestBoundSessionStatus(status)) {
-      is_covered_by_bound_session_ = true;
-    }
-    if (status == RequestBoundSessionStatus::kCoveredWithMissingCookie) {
-      CHECK(bound_session_request_throttled_handler_);
-      *defer = true;
-      is_deferred_for_bound_session_ = true;
-      CHECK(!bound_session_request_throttled_start_time_.has_value());
-      bound_session_request_throttled_start_time_ = base::TimeTicks::Now();
-      bound_session_request_throttled_handler_->HandleRequestBlockedOnCookie(
-          request->url,
-          base::BindOnce(
-              &GoogleURLLoaderThrottle::OnDeferRequestForBoundSessionCompleted,
-              weak_factory_.GetWeakPtr()));
-    }
-  }
-#endif
 }
 
 void GoogleURLLoaderThrottle::WillRedirectRequest(
@@ -246,102 +167,12 @@ void GoogleURLLoaderThrottle::WillRedirectRequest(
     const network::mojom::URLResponseHead& response_head,
     bool* defer,
     network::HttpRequestHeadersUpdateParams* headers_update_params) {
-  // URLLoaderThrottles can only change the redirect URL when the network
-  // service is enabled. The non-network service path handles this in
-  // ChromeNetworkDelegate.
-  if (dynamic_params_->force_safe_search) {
-    safe_search_api::ForceGoogleSafeSearch(redirect_info->new_url,
-                                           &redirect_info->new_url);
-  }
-
-  if (dynamic_params_->youtube_restrict >
-          safe_search_api::YOUTUBE_RESTRICT_OFF &&
-      dynamic_params_->youtube_restrict <
-          safe_search_api::YOUTUBE_RESTRICT_COUNT) {
-    safe_search_api::ForceYouTubeRestrict(
-        redirect_info->new_url,
-        &headers_update_params->modified_cors_exempt_headers,
-        static_cast<safe_search_api::YouTubeRestrictMode>(
-            dynamic_params_->youtube_restrict));
-  }
-
-  if (!dynamic_params_->allowed_domains_for_apps.empty()) {
-    if (redirect_info->new_url.DomainIs("google.com")) {
-      headers_update_params->modified_cors_exempt_headers.SetHeader(
-          safe_search_api::kGoogleAppsAllowedDomains,
-          dynamic_params_->allowed_domains_for_apps);
-    } else {
-      headers_update_params->removed_headers.push_back(
-          safe_search_api::kGoogleAppsAllowedDomains);
-    }
-  }
-
-#if BUILDFLAG(IS_ANDROID)
-  if (!client_data_header_.empty() &&
-      !google_util::IsGoogleAssociatedDomainUrl(redirect_info->new_url)) {
-    headers_update_params->removed_headers.push_back(kCCTClientDataHeader);
-  }
-#endif
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  if (sends_cookies_) {
-    RequestBoundSessionStatus status = GetRequestBoundSessionStatus(
-        redirect_info->new_url,
-        dynamic_params_->bound_session_throttler_params);
-    if (IsCoveredRequestBoundSessionStatus(status)) {
-      is_covered_by_bound_session_ = true;
-    }
-    if (status == RequestBoundSessionStatus::kCoveredWithMissingCookie) {
-      CHECK(bound_session_request_throttled_handler_);
-      *defer = true;
-      is_deferred_for_bound_session_ = true;
-      CHECK(!bound_session_request_throttled_start_time_.has_value());
-      bound_session_request_throttled_start_time_ = base::TimeTicks::Now();
-      bound_session_request_throttled_handler_->HandleRequestBlockedOnCookie(
-          redirect_info->new_url,
-          base::BindOnce(
-              &GoogleURLLoaderThrottle::OnDeferRequestForBoundSessionCompleted,
-              weak_factory_.GetWeakPtr()));
-    }
-  }
-#endif
 }
 
 void GoogleURLLoaderThrottle::WillProcessResponse(
     const GURL& response_url,
     network::mojom::URLResponseHead* response_head,
     bool* defer) {
-#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  if (is_covered_by_bound_session_) {
-    RecordBoundSessionStatusMetrics(is_deferred_for_bound_session_,
-                                    is_main_frame_navigation_,
-                                    /*is_request_succeeded=*/true);
-  }
-  if (deferred_request_resume_trigger_) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "Signin.BoundSessionCredentials.DeferredRequestUnblockTrigger.Success",
-        deferred_request_resume_trigger_.value());
-  }
-#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-  // Built-in additional protection for the chrome web store origin by
-  // ensuring that the X-Frame-Options protection mechanism is set to either
-  // DENY or SAMEORIGIN.
-  if (response_url.SchemeIsHTTPOrHTTPS() &&
-      extension_urls::IsWebstoreDomain(response_url)) {
-    // TODO(mkwst): Consider shifting this to a NavigationThrottle rather than
-    // relying on implicit ordering between this check and the time at which
-    // ParsedHeaders is created.
-    CHECK(response_head);
-    CHECK(response_head->parsed_headers);
-    if (response_head->parsed_headers->xfo !=
-        network::mojom::XFrameOptionsValue::kDeny) {
-      response_head->headers->SetHeader("X-Frame-Options", "SAMEORIGIN");
-      response_head->parsed_headers->xfo =
-          network::mojom::XFrameOptionsValue::kSameOrigin;
-    }
-  }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 }
 
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)

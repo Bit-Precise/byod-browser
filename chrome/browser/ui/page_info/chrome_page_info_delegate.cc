@@ -462,23 +462,6 @@ void ChromePageInfoDelegate::OpenSafeBrowsingHelpCenterPage(
 }
 
 void ChromePageInfoDelegate::OnSuspiciousSiteBackToSafety() {
-#if BUILDFLAG(IS_ANDROID)
-  if (auto* ssc =
-          safe_browsing::SuspiciousSiteControllerAndroid::FromWebContents(
-              web_contents_)) {
-    ssc->HandleBackNavigation(
-        safe_browsing::SuspiciousSiteWarningUserInteraction::
-            kBackToSafetyButton);
-    return;
-  }
-#else
-  if (auto* ssc =
-          safe_browsing::SuspiciousSiteControllerDesktop::FromWebContents(
-              web_contents_)) {
-    ssc->OnBackToSafetyClicked();
-    return;
-  }
-#endif
   if (!web_contents_) {
     return;
   }
@@ -505,21 +488,6 @@ void ChromePageInfoDelegate::OnSuspiciousSiteBackToSafety() {
 }
 
 void ChromePageInfoDelegate::OnSuspiciousSiteMarkAsSafe() {
-#if BUILDFLAG(IS_ANDROID)
-  if (auto* ssc =
-          safe_browsing::SuspiciousSiteControllerAndroid::FromWebContents(
-              web_contents_)) {
-    ssc->OnContinueButtonClicked();
-    return;
-  }
-#else
-  if (auto* ssc =
-          safe_browsing::SuspiciousSiteControllerDesktop::FromWebContents(
-              web_contents_)) {
-    ssc->OnMarkAsSafeClicked();
-    return;
-  }
-#endif
   if (!web_contents_) {
     return;
   }

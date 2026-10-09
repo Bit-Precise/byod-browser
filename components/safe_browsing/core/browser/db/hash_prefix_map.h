@@ -10,6 +10,7 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "base/task/sequenced_task_runner.h"
 #include "components/safe_browsing/core/browser/db/hash_prefix_container.h"
 #include "components/safe_browsing/core/browser/db/v4_protocol_manager_util.h"
 

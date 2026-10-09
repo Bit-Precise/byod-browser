@@ -185,8 +185,7 @@ class ChromeDomainReliabilityDelegate
   ~ChromeDomainReliabilityDelegate() override = default;
 
   bool IsDomainReliabilityAllowed() const override {
-    return g_browser_process->local_state()->GetBoolean(
-        domain_reliability::prefs::kDomainReliabilityAllowedByPolicy);
+    return false;
   }
 
   bool IsMetricsAndCrashReportingEnabled() const override {

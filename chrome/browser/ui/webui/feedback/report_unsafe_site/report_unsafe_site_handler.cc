@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/webui/feedback/report_unsafe_site/report_unsafe_site_handler.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "components/safe_browsing/content/browser/client_side_detection_host.h"
 #include "components/safe_browsing/content/browser/safe_browsing_tab_observer.h"
 #include "components/url_formatter/elide_url.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
@@ -17,16 +16,7 @@
 namespace {
 safe_browsing::ClientSideDetectionHost* GetClientSideDetectionHost(
     content::WebContents* web_contents) {
-  if (!web_contents) {
     return nullptr;
-  }
-
-  auto* observer =
-      safe_browsing::SafeBrowsingTabObserver::FromWebContents(web_contents);
-  if (!observer) {
-    return nullptr;
-  }
-  return observer->client_side_detection_host();
 }
 
 }  // anonymous namespace
@@ -92,8 +82,6 @@ void ReportUnsafeSitePageHandler::SendReport(bool include_screenshot,
   if (!include_screenshot) {
     screenshot_ = SkBitmap();
   }
-  client_side_detection_host->ReportUnsafeSite(screenshot_,
-                                               std::move(callback));
 }
 
 void ReportUnsafeSitePageHandler::CloseDialog() {

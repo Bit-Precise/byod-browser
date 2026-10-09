@@ -388,8 +388,6 @@ source_set("extensions") {
     "menu_manager_factory.h",
     "navigation_extension_enabler.cc",
     "navigation_extension_enabler.h",
-    "omaha_attributes_handler.cc",
-    "omaha_attributes_handler.h",
     "open_tab_helper.cc",
     "open_tab_helper.h",
     "pack_extension_job.cc",

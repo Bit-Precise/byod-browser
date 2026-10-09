@@ -469,14 +469,6 @@ group("gn_all") {
       ]
     }
 
-    if (is_chromeos || is_mac || is_win) {
-      deps += [
-        "//rlz:rlz_id",
-        "//rlz:rlz_lib",
-        "//rlz:rlz_unittests",
-      ]
-    }
-
     if (is_linux || is_chromeos) {
       # The following are definitely linux-only.
       deps += [

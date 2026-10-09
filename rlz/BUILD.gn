@@ -205,7 +205,7 @@ if (enable_rlz_support) {
   }
 }
 
-if (!is_ios && !is_android) {
+if (enable_rlz_support && !is_ios && !is_android) {
   executable("rlz_id") {
     sources = [ "examples/rlz_id.cc" ]
     deps = [

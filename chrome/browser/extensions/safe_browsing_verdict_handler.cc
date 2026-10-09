@@ -123,7 +123,6 @@ void SafeBrowsingVerdictHandler::UpdateBlocklistedExtensions(
     blocklist_.Remove(id);
     blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
         id, BitMapBlocklistState::NOT_BLOCKLISTED, extension_prefs_);
-    registrar_->OnBlocklistStateRemoved(id);
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.UnblacklistInstalled",
                               extension->location());
   }
@@ -137,7 +136,6 @@ void SafeBrowsingVerdictHandler::UpdateBlocklistedExtensions(
     blocklist_.Insert(extension);
     blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
         id, BitMapBlocklistState::BLOCKLISTED_MALWARE, extension_prefs_);
-    registrar_->OnBlocklistStateAdded(id);
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.BlacklistInstalled",
                               extension->location());
   }
@@ -161,7 +159,6 @@ void SafeBrowsingVerdictHandler::UpdateGreylistedExtensions(
     blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
         extension->id(), BitMapBlocklistState::NOT_BLOCKLISTED,
         extension_prefs_);
-    registrar_->OnGreylistStateRemoved(extension->id());
     UMA_HISTOGRAM_ENUMERATION("Extensions.Greylist.Enabled",
                               extension->location());
   }
@@ -181,7 +178,6 @@ void SafeBrowsingVerdictHandler::UpdateGreylistedExtensions(
         blocklist_prefs::BlocklistStateToBitMapBlocklistState(greylist_state);
     blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
         extension->id(), bitmap_greylist_state, extension_prefs_);
-    registrar_->OnGreylistStateAdded(id, bitmap_greylist_state);
     UMA_HISTOGRAM_ENUMERATION("Extensions.Greylist.Disabled",
                               extension->location());
   }

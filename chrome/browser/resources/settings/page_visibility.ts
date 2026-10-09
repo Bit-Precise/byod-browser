@@ -44,7 +44,7 @@ export interface PrivacyPageVisibility {
 
 function createPageVisibility(): PageVisibility|undefined {
   if (!loadTimeData.getBoolean('isGuest')) {
-    return undefined;
+    return {ai: false};
   }
 
   // <if expr="not is_chromeos">

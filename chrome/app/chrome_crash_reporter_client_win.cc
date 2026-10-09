@@ -146,11 +146,11 @@ bool ChromeCrashReporterClient::IsRunningUnattended() {
 }
 
 bool ChromeCrashReporterClient::GetCollectStatsConsent() {
-  return install_static::GetCollectStatsConsent();
+  return false;  // Keep local Crashpad dumps; never upload them to Google.
 }
 
 bool ChromeCrashReporterClient::GetCollectStatsInSample() {
-  return install_static::GetCollectStatsInSample();
+  return false;
 }
 
 bool ChromeCrashReporterClient::ShouldMonitorCrashHandlerExpensively() {

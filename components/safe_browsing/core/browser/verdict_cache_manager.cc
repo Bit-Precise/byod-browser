@@ -467,16 +467,6 @@ VerdictCacheManager::VerdictCacheManager(
   // pref_service can be null in tests.
   if (pref_service) {
     pref_change_registrar_.Init(pref_service);
-    pref_change_registrar_.Add(
-        prefs::kSafeBrowsingEnhanced,
-        base::BindRepeating(&VerdictCacheManager::CleanUpAllPageLoadTokens,
-                            weak_factory_.GetWeakPtr(),
-                            ClearReason::kSafeBrowsingStateChanged));
-    pref_change_registrar_.Add(
-        prefs::kSafeBrowsingEnabled,
-        base::BindRepeating(&VerdictCacheManager::CleanUpAllPageLoadTokens,
-                            weak_factory_.GetWeakPtr(),
-                            ClearReason::kSafeBrowsingStateChanged));
   }
   // sync_observer_ can be null in some embedders that don't support sync.
   if (sync_observer_) {

@@ -334,15 +334,7 @@ update_client::CrxComponent CrxUpdateService::ToCrxComponent(
   crx.crx_format_requirement =
       crx_file::VerifierFormat::CRX3_WITH_PUBLISHER_PROOF;
 
-  bool component_updates_enabled =
-      config_->GetPrefService()->GetBoolean(prefs::kComponentUpdatesEnabled);
-  // Some components should update even when enterprise policy disables
-  // updates.
-  bool override_component_updates_enabled =
-      !component.supports_group_policy_enable_component_updates;
-  bool should_update =
-      override_component_updates_enabled || component_updates_enabled;
-  crx.updates_enabled = component.allow_updates && should_update;
+  crx.updates_enabled = false;  // BYOD has no Google component update service.
 
 #if BUILDFLAG(CHROME_FOR_TESTING)
   if (required_components_controller_) {

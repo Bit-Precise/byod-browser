@@ -355,18 +355,12 @@ void ChromeProfileRequestGenerator::OnAggregatedSignalsReceived(
         profile_signals.built_in_dns_client_enabled);
     profile_signals_report->set_chrome_remote_desktop_app_blocked(
         profile_signals.chrome_remote_desktop_app_blocked);
-    profile_signals_report->set_password_protection_warning_trigger(
-        TranslatePasswordProtectionTrigger(
-            profile_signals.password_protection_warning_trigger));
     if (profile_signals.profile_enrollment_domain) {
       profile_signals_report->set_profile_enrollment_domain(
           profile_signals.profile_enrollment_domain.value());
     }
     profile_signals_report->set_realtime_url_check_mode(
         TranslateRealtimeUrlCheckMode(profile_signals.realtime_url_check_mode));
-    profile_signals_report->set_safe_browsing_protection_level(
-        TranslateSafeBrowsingLevel(
-            profile_signals.safe_browsing_protection_level));
     profile_signals_report->set_site_isolation_enabled(
         profile_signals.site_isolation_enabled);
 

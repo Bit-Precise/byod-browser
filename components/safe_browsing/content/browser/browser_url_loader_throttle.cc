@@ -341,18 +341,6 @@ void BrowserURLLoaderThrottle::WillRedirectRequest(
   }
 
   // Make IP addresses from redirects available for later real-time URL checks.
-  if (!response_head.remote_endpoint.address().empty()) {
-    content::WebContents* web_contents = web_contents_getter_.Run();
-    if (web_contents) {
-      SafeBrowsingNavigationObserver* navigation_observer =
-          SafeBrowsingNavigationObserver::FromWebContents(web_contents);
-      if (navigation_observer) {
-        navigation_observer->RecordHostToIpMapping(
-            current_url_.GetHost(),
-            response_head.remote_endpoint.ToStringWithoutPort());
-      }
-    }
-  }
   current_url_ = redirect_info->new_url;
 
   pending_sync_checks_++;

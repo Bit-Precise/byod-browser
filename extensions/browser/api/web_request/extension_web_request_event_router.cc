@@ -1070,14 +1070,6 @@ int WebRequestEventRouter::OnBeforeRequest(
           DCHECK(action.redirect_url);
           OnDNRActionMatched(browser_context, *request, action);
           *new_url = GetNewUrl(action.redirect_url.value(), browser_context);
-          // Collect redirect action data for the Extension Telemetry Service.
-          if (action.type == DNRRequestAction::Type::REDIRECT) {
-            ExtensionsBrowserClient::Get()
-                ->GetSafeBrowsingDelegate()
-                ->NotifyExtensionDeclarativeNetRequestRedirectAction(
-                    browser_context, action.extension_id, request->url,
-                    action.redirect_url.value());
-          }
           RecordThatNavigationWasInitiatedByExtension(
               request, browser_context, new_url, action.extension_id);
           return net::OK;

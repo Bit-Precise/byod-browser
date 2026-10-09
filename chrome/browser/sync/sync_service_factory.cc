@@ -38,7 +38,6 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/reading_list/reading_list_model_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/security_events/security_event_recorder_factory.h"
 #include "chrome/browser/sharing/sharing_message_bridge_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -298,8 +297,8 @@ syncer::DataTypeController::TypeVector CreateChromeControllers(
 
   builder.SetDataTypeStoreService(
       DataTypeStoreServiceFactory::GetForProfile(profile));
-  builder.SetSecurityEventRecorder(
-      SecurityEventRecorderFactory::GetForProfile(profile));
+  // BYOD does not create a Google security-event sync service.
+  builder.SetSecurityEventRecorder(nullptr);
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   builder.SetExtensionSyncService(ExtensionSyncService::Get(profile));
@@ -570,7 +569,6 @@ SyncServiceFactory::SyncServiceFactory()
   DependsOn(PasswordSenderServiceFactory::GetInstance());
   DependsOn(ProfilePasswordStoreFactory::GetInstance());
 
-  DependsOn(SecurityEventRecorderFactory::GetInstance());
   DependsOn(SendTabToSelfSyncServiceFactory::GetInstance());
   DependsOn(SharingMessageBridgeFactory::GetInstance());
 #if !BUILDFLAG(IS_ANDROID)

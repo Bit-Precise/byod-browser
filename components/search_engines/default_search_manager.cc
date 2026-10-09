@@ -23,6 +23,7 @@
 #include "components/search_engines/template_url_data_util.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "services/preferences/tracked/pref_hash_filter.h"
+#include "third_party/search_engines_data/resources/definitions/prepopulated_engines.h"
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #include "base/enterprise_util.h"
@@ -30,6 +31,15 @@
 
 namespace {
 bool g_fallback_search_engines_disabled = false;
+
+const TemplateURLData* WithoutBundledGoogle(const TemplateURLData* data) {
+  // Disable the bundled Google integration without rewriting existing profiles
+  // or selecting a different online service on the user's behalf. Custom and
+  // non-Google engines remain available; ordinary Google websites still work.
+  return data && data->prepopulate_id == TemplateURLPrepopulateData::google.id
+             ? nullptr
+             : data;
+}
 }  // namespace
 
 const char DefaultSearchManager::kID[] = "id";
@@ -180,25 +190,25 @@ const TemplateURLData* DefaultSearchManager::GetDefaultSearchEngine(
     if (source) {
       *source = FROM_POLICY;
     }
-    return prefs_default_search_.Get();
+    return WithoutBundledGoogle(prefs_default_search_.Get());
   }
   if (default_search_recommended_by_policy_) {
     if (source) {
       *source = FROM_POLICY_RECOMMENDED;
     }
-    return prefs_default_search_.Get();
+    return WithoutBundledGoogle(prefs_default_search_.Get());
   }
   if (extension_default_search_) {
     if (source) {
       *source = FROM_EXTENSION;
     }
-    return extension_default_search_.get();
+    return WithoutBundledGoogle(extension_default_search_.get());
   }
   if (prefs_default_search_.Get()) {
     if (source) {
       *source = FROM_USER;
     }
-    return prefs_default_search_.Get();
+    return WithoutBundledGoogle(prefs_default_search_.Get());
   }
   if (source) {
     *source = FROM_FALLBACK;
@@ -209,6 +219,9 @@ const TemplateURLData* DefaultSearchManager::GetDefaultSearchEngine(
 std::unique_ptr<TemplateURLData>
 DefaultSearchManager::GetDefaultSearchEngineIgnoringExtensions() const {
   if (prefs_default_search_.Get()) {
+    if (!WithoutBundledGoogle(prefs_default_search_.Get())) {
+      return nullptr;
+    }
     return std::make_unique<TemplateURLData>(*prefs_default_search_.Get());
   }
 
@@ -227,6 +240,9 @@ DefaultSearchManager::GetDefaultSearchEngineIgnoringExtensions() const {
   if (user_value && user_value->is_dict()) {
     auto turl_data = TemplateURLDataFromDictionary(user_value->GetDict());
     if (turl_data) {
+      if (!WithoutBundledGoogle(turl_data.get())) {
+        return nullptr;
+      }
       ReconcilingTemplateURLDataHolder reconciler(*prepopulate_data_resolver_);
       reconciler.SetAndReconcile(std::move(turl_data));
       return reconciler.Release();
@@ -260,6 +276,9 @@ DefaultSearchManager::GetRecommendedDefaultSearchEngine() const {
     return nullptr;
   }
   auto data = TemplateURLDataFromDictionary(dict);
+  if (!WithoutBundledGoogle(data.get())) {
+    return nullptr;
+  }
   if (data) {
     data->safe_for_autoreplace = false;
     data->policy_origin = TemplateURLData::PolicyOrigin::kDefaultSearchProvider;
@@ -279,9 +298,9 @@ const TemplateURLData* DefaultSearchManager::GetFallbackSearchEngine() const {
     return nullptr;
   }
   if (saved_guest_search_) {
-    return saved_guest_search_.get();
+    return WithoutBundledGoogle(saved_guest_search_.get());
   }
-  return fallback_default_search_.get();
+  return WithoutBundledGoogle(fallback_default_search_.get());
 }
 
 void DefaultSearchManager::SetUserSelectedDefaultSearchEngine(

@@ -80,9 +80,6 @@ void SSLErrorControllerClient::GoBack() {
 
 void SSLErrorControllerClient::Proceed() {
   content::WebContents* const web_contents = this->web_contents();
-  MaybeTriggerSecurityInterstitialProceededEvent(
-      web_contents, request_url_, "SSL_ERROR", cert_error_,
-      base::UTF16ToUTF8(web_contents->GetTitle()));
 #if !BUILDFLAG(IS_ANDROID)
   // Web Apps should not be allowed to run if there is a problem with their
   // certificate. So, when users click proceed on an interstitial, move the tab

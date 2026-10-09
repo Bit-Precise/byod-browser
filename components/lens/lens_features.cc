@@ -247,9 +247,6 @@ const base::FeatureParam<bool> kUseLensOverlayForImageSearch{
 const base::FeatureParam<bool> kUseLensOverlayForVideoFrameSearch{
     &kLensOverlay, "use-for-video-frame-search", true};
 
-const base::FeatureParam<bool> kIsOmniboxEntryPointEnabled{
-    &kLensOverlay, "omnibox-entry-point", true};
-
 constexpr base::FeatureParam<bool> kIsOmniboxEntrypointAlwaysVisible{
     &kLensOverlay, "omnibox-entry-point-always-visible", false};
 
@@ -647,7 +644,8 @@ bool GetShouldIssueProcessPrewarmingForLens() {
 }
 
 bool IsLensOverlayEnabled() {
-  return base::FeatureList::IsEnabled(kLensOverlay);
+  // BYOD does not ship the Google Lens service or its entry points.
+  return false;
 }
 
 std::string GetLensOverlayActivityURL() {
@@ -854,8 +852,7 @@ bool UseLensOverlayForVideoFrameSearch() {
 }
 
 bool IsOmniboxEntryPointEnabled() {
-  return base::FeatureList::IsEnabled(kLensOverlayOmniboxEntryPoint) &&
-         kIsOmniboxEntryPointEnabled.Get();
+  return false;
 }
 
 bool IsOmniboxEntrypointAlwaysVisible() {

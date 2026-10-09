@@ -10,41 +10,32 @@
 #include "chrome/browser/ssl/https_upgrades_util.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/web_ui_data_source.h"
 
-using safe_browsing::SecuritySettingsBundleSetting;
 
 namespace settings {
 
 void AddSecurityData(content::WebUIDataSource* html_source) {
   html_source->AddBoolean(
       "enableBundledSecuritySettings",
-      base::FeatureList::IsEnabled(safe_browsing::kBundledSecuritySettings));
+      false);
   html_source->AddBoolean(
       "enableBundledSecuritySettingsSecureDnsV2",
-      base::FeatureList::IsEnabled(
-          safe_browsing::kBundledSecuritySettingsSecureDnsV2));
+      false);
   html_source->AddBoolean("enableHttpsFirstModeNewSettings",
                           IsBalancedModeAvailable());
 
   html_source->AddInteger("securityStandardBundleSafeBrowsingDefault",
-                          static_cast<int>(GetDefaultSafeBrowsingState(
-                              SecuritySettingsBundleSetting::STANDARD)));
+                          0);
   html_source->AddInteger("securityEnhancedBundleSafeBrowsingDefault",
-                          static_cast<int>(GetDefaultSafeBrowsingState(
-                              SecuritySettingsBundleSetting::ENHANCED)));
+                          0);
 
   html_source->AddInteger(
       "securityStandardBundleJavascriptGuardrailsDefault",
-      static_cast<int>(content_settings::GeneratedJavascriptOptimizerPref::
-                           GetDefaultJsOptimizerSetting(
-                               SecuritySettingsBundleSetting::STANDARD)));
+      static_cast<int>(content_settings::JavascriptOptimizerSetting::kAllowed));
   html_source->AddInteger(
       "securityEnhancedBundleJavascriptGuardrailsDefault",
-      static_cast<int>(content_settings::GeneratedJavascriptOptimizerPref::
-                           GetDefaultJsOptimizerSetting(
-                               SecuritySettingsBundleSetting::ENHANCED)));
+      static_cast<int>(content_settings::JavascriptOptimizerSetting::kAllowed));
 
   html_source->AddBoolean("enableHashPrefixRealTimeLookups",
                           safe_browsing::hash_realtime_utils::

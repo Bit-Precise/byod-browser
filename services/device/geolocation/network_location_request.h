@@ -11,6 +11,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "services/device/geolocation/wifi_data_provider.h"
@@ -95,23 +96,15 @@ class NetworkLocationRequest {
       const net::PartialNetworkTrafficAnnotationTag& partial_traffic_annotation,
       NetworkLocationRequestSource network_location_request_source);
 
-  bool is_request_pending() const { return bool(url_loader_); }
+  bool is_request_pending() const { return request_pending_; }
 
   std::vector<mojom::AccessPointDataPtr> GetRequestDataForDiagnostics() const;
 
  private:
-  void OnRequestComplete(std::optional<std::string> data);
-
-  const scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-  const std::string api_key_;
+  void CompleteUnavailable(WifiData wifi_data);
   const LocationResponseCallback location_response_callback_;
-  std::unique_ptr<network::SimpleURLLoader> url_loader_;
-
-  // Keep a copy of the data sent in the request, so we can refer back to it
-  // when the response arrives.
-  WifiData wifi_data_;
-  base::DictValue request_data_;
-  base::Time wifi_timestamp_;
+  bool request_pending_ = false;
+  base::WeakPtrFactory<NetworkLocationRequest> weak_factory_{this};
 };
 
 }  // namespace device

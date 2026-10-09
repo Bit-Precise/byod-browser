@@ -43,18 +43,6 @@ namespace {
 const char kOptimizationGuideServiceModelQualityDefaultURL[] =
     "https://chromemodelquality-pa.googleapis.com/v1:LogAiData";
 
-void RecordUploadStatusHistogram(proto::LogAiDataRequest::FeatureCase feature,
-                                 ModelQualityLogsUploadStatus status) {
-  const MqlsFeatureMetadata* metadata =
-      MqlsFeatureRegistry::GetInstance().GetFeature(feature);
-  CHECK(metadata);
-  base::UmaHistogramEnumeration(
-      base::StrCat(
-          {"OptimizationGuide.ModelQualityLogsUploaderService.UploadStatus.",
-           metadata->name()}),
-      status);
-}
-
 // Sets user feedback for the ModelExecutionFeature corresponding to the
 // `log_entry`.
 void RecordUserFeedbackHistogram(proto::LogAiDataRequest* log_ai_data_request) {
@@ -68,36 +56,6 @@ void RecordUserFeedbackHistogram(proto::LogAiDataRequest* log_ai_data_request) {
       base::StrCat(
           {"OptimizationGuide.ModelQuality.UserFeedback.", metadata->name()}),
       static_cast<ModelQualityUserFeedback>(user_feedback));
-}
-
-// URL load completion callback.
-void OnURLLoadComplete(
-    std::unique_ptr<network::SimpleURLLoader> active_url_loader,
-    proto::LogAiDataRequest::FeatureCase feature,
-    scoped_refptr<net::HttpResponseHeaders> headers) {
-  CHECK(active_url_loader) << "loader shouldn't be null\n";
-  TRACE_EVENT("optimization_guide",
-              "ModelQualityLogsUploaderService::OnURLLoadComplete", "feature",
-              feature);
-
-  auto net_error = active_url_loader->NetError();
-  int response_code = -1;
-  if (headers) {
-    response_code = headers->response_code();
-  }
-
-  // Net error codes are negative but histogram enums must be positive.
-  base::UmaHistogramSparse(
-      "OptimizationGuide.ModelQualityLogsUploaderService.NetErrorCode",
-      -net_error);
-
-  if (net_error != net::OK || response_code != net::HTTP_OK) {
-    RecordUploadStatusHistogram(feature,
-                                ModelQualityLogsUploadStatus::kNetError);
-    return;
-  }
-  RecordUploadStatusHistogram(feature,
-                              ModelQualityLogsUploadStatus::kUploadSuccessful);
 }
 
 }  // namespace
@@ -189,94 +147,7 @@ void ModelQualityLogsUploaderService::UploadModelQualityLogs(
 void ModelQualityLogsUploaderService::UploadFinalizedLog(
     std::unique_ptr<proto::LogAiDataRequest> log,
     proto::LogAiDataRequest::FeatureCase feature) {
-  std::string serialized_logs;
-  log->SerializeToString(&serialized_logs);
-
-  auto resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = model_quality_logs_uploader_service_url_;
-  resource_request->method = "POST";
-  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-
-  net::NetworkTrafficAnnotationTag traffic_annotation =
-      net::DefineNetworkTrafficAnnotation("model_quality_logging",
-                                          R"(
-        semantics {
-          sender: "Optimization Guide Model Quality Logger"
-          description:
-            "Sends logging data about machine learning model requests, "
-            "responses and user interaction with the feature using the "
-            "machine learning model. Google may use this data to improve "
-            "Google products, including the machine learning models "
-            "themselves, or to develop new models."
-          trigger:
-            "Sent after the feature using the machine learning model "
-            "is no longer using the model response, and the user is "
-            "done interacting with the feature."
-          data: "The machine learning model request, response and "
-            "usage statistics, feedback data and device information "
-            "(platform, chrome version, etc.)."
-          internal {
-            contacts {
-              email: "chrome-intelligence-core@google.com"
-            }
-          }
-          user_data {
-            type: SENSITIVE_URL
-            type: WEB_CONTENT
-            type: USER_CONTENT
-            type: HW_OS_INFO
-          }
-          last_reviewed: "2024-01-12"
-          destination: GOOGLE_OWNED_SERVICE
-        }
-         policy {
-          cookies_allowed: NO
-          setting:
-            "Users can disable this by signing out of Chrome or by "
-            "disabling each feature using a machine learning model."
-          chrome_policy {
-            CreateThemesSettings {
-              CreateThemesSettings: 1
-            }
-            TabOrganizerSettings {
-              TabOrganizerSettings: 1
-            }
-            HelpMeWriteSettings {
-              HelpMeWriteSettings: 1
-            }
-          }
-          chrome_policy {
-            CreateThemesSettings {
-              CreateThemesSettings: 2
-            }
-            TabOrganizerSettings {
-              TabOrganizerSettings: 2
-            }
-            HelpMeWriteSettings {
-              HelpMeWriteSettings: 2
-            }
-          }
-        })");
-
-  // Holds the currently active url request.
-  std::unique_ptr<network::SimpleURLLoader> active_url_loader;
-  active_url_loader = variations::CreateSimpleURLLoaderWithVariationsHeader(
-      std::move(resource_request),
-      // This is always InIncognito::kNo as model quality logs upload is not
-      // enabled on incognito sessions and is rechecked before each upload.
-      variations::InIncognito::kNo, variations::SignedIn::kNo,
-      traffic_annotation);
-
-  active_url_loader->AttachStringForUpload(serialized_logs,
-                                           "application/x-protobuf");
-
-  auto* active_url_loader_ptr = active_url_loader.get();
-  // Use `DownloadHeadersOnly()` here since we only need the response code and
-  // not the response body in `OnURLLoadComplete()`.
-  active_url_loader_ptr->DownloadHeadersOnly(
-      url_loader_factory_.get(),
-      base::BindOnce(&OnURLLoadComplete, std::move(active_url_loader),
-                     feature));
+  // Google model-quality telemetry is not part of BYOD.
 }
 
 void ModelQualityLogsUploaderService::SetMqlsLogForWebUI(

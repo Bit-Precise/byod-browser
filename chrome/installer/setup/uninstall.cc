@@ -67,8 +67,6 @@
 #include "chrome/installer/util/work_item.h"
 #include "chrome/windows_services/elevated_tracing_service/service_integration.h"
 #include "content/public/common/result_codes.h"
-#include "rlz/lib/rlz_lib_clear.h"
-#include "rlz/lib/supplementary_branding.h"
 
 using base::win::RegKey;
 
@@ -103,22 +101,6 @@ void ProcessChromeWorkItems(const InstallerState& installer_state) {
   AddOsUpgradeWorkItems(installer_state, base::FilePath(), base::Version(),
                         work_item_list.get());
   work_item_list->Do();
-}
-
-void ClearRlzProductState() {
-  const rlz_lib::AccessPoint points[] = {rlz_lib::CHROME_OMNIBOX,
-                                         rlz_lib::CHROME_HOME_PAGE,
-                                         rlz_lib::CHROME_APP_LIST};
-
-  rlz_lib::ClearProductState(rlz_lib::CHROME, points);
-
-  // If chrome has been reactivated, clear all events for this brand as well.
-  std::wstring reactivation_brand_wide;
-  if (GoogleUpdateSettings::GetReactivationBrand(&reactivation_brand_wide)) {
-    std::string reactivation_brand(base::WideToASCII(reactivation_brand_wide));
-    rlz_lib::SupplementaryBranding branding(reactivation_brand.c_str());
-    rlz_lib::ClearProductState(rlz_lib::CHROME, points);
-  }
 }
 
 // Removes all files from the installer directory. Returns false in case of an
@@ -925,7 +907,6 @@ InstallStatus UninstallProduct(const ModifyParams& modify_params,
   // Chrome is not in use so lets uninstall Chrome by deleting various files
   // and registry entries. Here we will just make best effort and keep going
   // in case of errors.
-  ClearRlzProductState();
 
   auto_launch_util::DisableStartAtLogin();
 

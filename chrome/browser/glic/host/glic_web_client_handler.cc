@@ -87,7 +87,6 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/content/browser/ui_manager.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/security_interstitials/core/unsafe_resource.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_frame_host.h"
@@ -1286,102 +1285,6 @@ class GlicWebClientHandler
   void ProcessCounterAbuseVerdict(
       int32_t tab_id,
       mojom::CounterAbuseVerdictPtr verdict) override {
-    if (!base::FeatureList::IsEnabled(
-            features::kGlicProcessCounterAbuseVerdict)) {
-      return;
-    }
-    if (!safe_browsing::IsSafeBrowsingEnabled(*pref_service_)) {
-      return;
-    }
-    if (!verdict || !verdict->sb_verdict_result) {
-      base::UmaHistogramEnumeration(
-          "Glic.Api.ProcessCounterAbuseVerdict.Result",
-          GlicProcessCounterAbuseVerdictResult::kInvalidVerdict);
-      return;
-    }
-    if (!verdict->sb_verdict_result->show_interstitial) {
-      base::UmaHistogramEnumeration(
-          "Glic.Api.ProcessCounterAbuseVerdict.Result",
-          GlicProcessCounterAbuseVerdictResult::kNoInterstitialRequested);
-      return;
-    }
-
-    tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
-    if (!tab) {
-      return;
-    }
-    content::WebContents* contents = tab->GetContents();
-    if (!contents) {
-      return;
-    }
-    GURL active_url = contents->GetVisibleURL();
-    if (GURL(verdict->sb_verdict_result->url) != active_url) {
-      base::UmaHistogramEnumeration(
-          "Glic.Api.ProcessCounterAbuseVerdict.Result",
-          GlicProcessCounterAbuseVerdictResult::kUrlMismatch);
-      return;
-    }
-    if (!g_browser_process->safe_browsing_service()) {
-      return;
-    }
-    safe_browsing::BaseUIManager* ui_manager =
-        g_browser_process->safe_browsing_service()->ui_manager().get();
-    if (ui_manager) {
-      security_interstitials::UnsafeResource resource;
-      resource.url = GURL(verdict->sb_verdict_result->url);
-      resource.original_url = GURL(verdict->sb_verdict_result->url);
-      resource.threat_source = safe_browsing::ThreatSource::GLIC_COUNTER_ABUSE;
-
-      switch (verdict->sb_verdict_result->threat_type) {
-        case mojom::SbThreatType::kSocialEngineering:
-          resource.threat_type =
-              safe_browsing::SBThreatType::SB_THREAT_TYPE_URL_PHISHING;
-          break;
-        case mojom::SbThreatType::kMalware:
-          resource.threat_type =
-              safe_browsing::SBThreatType::SB_THREAT_TYPE_URL_MALWARE;
-          break;
-        case mojom::SbThreatType::kUnwantedSoftware:
-          resource.threat_type =
-              safe_browsing::SBThreatType::SB_THREAT_TYPE_URL_UNWANTED;
-          break;
-        default:
-          base::UmaHistogramEnumeration(
-              "Glic.Api.ProcessCounterAbuseVerdict.Result",
-              GlicProcessCounterAbuseVerdictResult::kUnsupportedThreatType);
-          return;
-      }
-
-      content::RenderFrameHost* primary_main_frame =
-          contents->GetPrimaryMainFrame();
-      if (primary_main_frame) {
-        const content::GlobalRenderFrameHostId primary_main_frame_id =
-            primary_main_frame->GetGlobalId();
-        resource.rfh_locator = security_interstitials::UnsafeResourceLocator::
-            CreateForRenderFrameToken(
-                primary_main_frame_id.child_id.value(),
-                primary_main_frame->GetFrameToken().value());
-      }
-
-      if (ui_manager->IsAllowlisted(
-              resource.url, resource.rfh_locator, resource.navigation_id,
-              resource.threat_type, resource.threat_source) ||
-          safe_browsing::IsURLAllowlistedByPolicy(resource.url,
-                                                  *pref_service_)) {
-        base::UmaHistogramEnumeration(
-            "Glic.Api.ProcessCounterAbuseVerdict.Result",
-            GlicProcessCounterAbuseVerdictResult::
-                kInterstitialSkippedAllowlist);
-      } else {
-        base::UmaHistogramEnumeration(
-            "Glic.Api.ProcessCounterAbuseVerdict.Result",
-            GlicProcessCounterAbuseVerdictResult::kSuccess);
-        base::UmaHistogramEnumeration(
-            "Glic.Api.ProcessCounterAbuseVerdict.ThreatType",
-            verdict->sb_verdict_result->threat_type);
-        ui_manager->DisplayBlockingPage(resource);
-      }
-    }
   }
 
   void OnOptinImpression() override {

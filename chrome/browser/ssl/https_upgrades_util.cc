@@ -16,7 +16,6 @@
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/security_interstitials/content/stateful_ssl_host_state_delegate.h"
 #include "components/security_interstitials/core/https_only_mode_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -91,17 +90,6 @@ ComputeInterstitialState(content::WebContents* web_contents, const GURL& url) {
   if (IsBalancedModeEnabled(prefs) && state &&
       !state->HttpsFirstBalancedModeSuppressedForTesting()) {
     interstitial_state.enabled_in_balanced_mode = true;
-
-    // Determine if Balanced Mode was enabled specifically due to ESB pairing.
-    bool user_has_modified_settings =
-        prefs->HasPrefPath(prefs::kHttpsOnlyModeEnabled) ||
-        prefs->HasPrefPath(prefs::kHttpsFirstBalancedMode);
-    if (!user_has_modified_settings &&
-        base::FeatureList::IsEnabled(
-            features::kHttpsFirstModeDefaultSettingPairsWithEsb) &&
-        safe_browsing::IsEnhancedProtectionEnabled(*prefs)) {
-      interstitial_state.enabled_by_esb_pairing = true;
-    }
   }
 
   auto* storage_partition =
@@ -145,11 +133,6 @@ bool IsBalancedModeEnabled(PrefService* prefs) {
       prefs->HasPrefPath(prefs::kHttpsOnlyModeEnabled) ||
       prefs->HasPrefPath(prefs::kHttpsFirstBalancedMode);
   if (!user_has_modified_settings) {
-    if (base::FeatureList::IsEnabled(
-            features::kHttpsFirstModeDefaultSettingPairsWithEsb) &&
-        safe_browsing::IsEnhancedProtectionEnabled(*prefs)) {
-      return true;
-    }
     return base::FeatureList::IsEnabled(
         features::kHttpsFirstBalancedModeAutoEnable);
   }

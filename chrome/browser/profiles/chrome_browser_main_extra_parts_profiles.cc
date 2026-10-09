@@ -969,7 +969,6 @@ void ChromeBrowserMainExtraPartsProfiles::
 #endif
 #if BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(FULL_SAFE_BROWSING)
-  enterprise_connectors::BrowserCrashEventRouterFactory::GetInstance();
 #endif
   enterprise_connectors::ConnectorsServiceFactory::GetInstance();
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
@@ -989,7 +988,6 @@ void ChromeBrowserMainExtraPartsProfiles::
 #endif
 #if BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(FULL_SAFE_BROWSING)
-  enterprise_connectors::ReportingEventRouterFactory::GetInstance();
 #endif
 #if BUILDFLAG(ENTERPRISE_TELOMERE_REPORTING)
   if (base::FeatureList::IsEnabled(enterprise_connectors::kTelomereReporting)) {

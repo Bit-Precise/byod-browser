@@ -96,8 +96,6 @@ constexpr std::pair<int, int> kAutofillExperimentRanges[] = {
 constexpr size_t kAutofillCrowdsourcingManagerMaxFormCacheSize = 16;
 constexpr size_t kMaxFieldsPerQueryRequest = 100;
 
-constexpr base::TimeDelta kFetchTimeout(base::Seconds(10));
-
 constexpr net::BackoffEntry::Policy kAutofillBackoffPolicy = {
     // Number of initial errors (in sequence) to ignore before applying
     // exponential back-off rules.
@@ -126,10 +124,6 @@ constexpr net::BackoffEntry::Policy kAutofillBackoffPolicy = {
 
 constexpr char kDefaultAutofillServerURL[] =
     "https://content-autofill.googleapis.com/";
-
-// Header to get base64 encoded serialized proto from API for safety.
-constexpr char kGoogEncodeResponseIfExecutable[] =
-    "X-Goog-Encode-Response-If-Executable";
 
 // The default number of days after which to reset the registry of autofill
 // events for which an upload has been sent.
@@ -215,111 +209,6 @@ std::string GetMetricName(CrowdsourcingRequestType request_type,
     NOTREACHED();
   };
   return base::StrCat({"Autofill.", TypeToName(request_type), ".", suffix});
-}
-
-net::NetworkTrafficAnnotationTag GetNetworkTrafficAnnotation(
-    CrowdsourcingRequestType request_type) {
-  switch (request_type) {
-    case CrowdsourcingRequestType::kRequestQuery:
-      return net::DefineNetworkTrafficAnnotation("autofill_query", R"(
-        semantics {
-          sender: "Autofill"
-          description:
-            "Chromium can automatically fill in web forms. If the feature is "
-            "enabled, Chromium will send a non-identifying description of the "
-            "form to Google's servers, which will respond with the type of "
-            "data required by each of the form's fields, if known. I.e., if a "
-            "field expects to receive a name, phone number, street address, "
-            "etc."
-          trigger: "User encounters a web form."
-          data:
-            "Hashed descriptions of the form and its fields. User data is not "
-            "sent."
-          destination: GOOGLE_OWNED_SERVICE
-          internal {
-            contacts {
-              owners: "//components/autofill/OWNERS"
-            }
-          }
-          user_data {
-            type: NONE
-          }
-          last_reviewed: "2023-08-10"
-        }
-        policy {
-          cookies_allowed: NO
-          setting:
-            "You can enable or disable this feature via 'Enable autofill to "
-            "fill out web forms in a single click.' in Chromium's settings "
-            "under 'Passwords and forms'. The feature is enabled by default."
-          chrome_policy {
-            AutofillCreditCardEnabled {
-                policy_options {mode: MANDATORY}
-                AutofillCreditCardEnabled: false
-            }
-          }
-          chrome_policy {
-            AutofillAddressEnabled {
-                policy_options {mode: MANDATORY}
-                AutofillAddressEnabled: false
-            }
-          }
-          chrome_policy {
-            PasswordManagerEnabled {
-                policy_options {mode: MANDATORY}
-                PasswordManagerEnabled: false
-            }
-          }
-        })");
-    case CrowdsourcingRequestType::kRequestUpload:
-      return net::DefineNetworkTrafficAnnotation("autofill_upload", R"(
-      semantics {
-        sender: "Autofill"
-        description:
-          "Chromium relies on crowd-sourced field type classifications to "
-          "help it automatically fill in web forms. If the feature is "
-          "enabled, Chromium will send a non-identifying description of the "
-          "form to Google's servers along with the type of data Chromium "
-          "observed being given to the form. I.e., if you entered your first "
-          "name into a form field, Chromium will 'vote' for that form field "
-          "being a first name field."
-        trigger: "User submits a web form."
-        data:
-          "Hashed descriptions of the form and its fields along with type of "
-          "data given to each field, if recognized from the user's "
-          "profile(s). User data is not sent."
-        destination: GOOGLE_OWNED_SERVICE
-        internal {
-          contacts {
-            owners: "//components/autofill/OWNERS"
-          }
-        }
-        user_data {
-          type: NONE
-        }
-        last_reviewed: "2023-07-31"
-      }
-      policy {
-        cookies_allowed: NO
-        setting:
-          "You can enable or disable this feature via 'Enable autofill to "
-          "fill out web forms in a single click.' in Chromium's settings "
-          "under 'Passwords and forms'. The feature is enabled by default."
-        chrome_policy {
-          AutofillCreditCardEnabled {
-              policy_options {mode: MANDATORY}
-              AutofillCreditCardEnabled: false
-          }
-        }
-        chrome_policy {
-          AutofillAddressEnabled {
-              policy_options {mode: MANDATORY}
-              AutofillAddressEnabled: false
-          }
-        }
-      })");
-  }
-  NOTREACHED();
 }
 
 // A field is active if it contributes to the form signature and it is are
@@ -542,23 +431,6 @@ std::string GetAPIMethodUrl(CrowdsourcingRequestType type,
     return std::string(api_method_url);
   }
   return base::StrCat({api_method_url, "/", resource_id});
-}
-
-// Gets HTTP body payload for API POST request.
-std::optional<std::string> GetAPIBodyPayload(std::string payload,
-                                             CrowdsourcingRequestType type) {
-  // Don't do anything for payloads not related to Query.
-  if (type != CrowdsourcingRequestType::kRequestQuery) {
-    return std::move(payload);
-  }
-  // Wrap query payload in a request proto to interface with API Query method.
-  AutofillPageResourceQueryRequest request;
-  request.set_serialized_request(std::move(payload));
-  payload = {};
-  if (!request.SerializeToString(&payload)) {
-    return std::nullopt;
-  }
-  return std::move(payload);
 }
 
 // Gets the data payload for API Query (POST and GET).
@@ -933,95 +805,9 @@ std::tuple<GURL, std::string> AutofillCrowdsourcingManager::GetRequestURLAndMeth
 }
 
 bool AutofillCrowdsourcingManager::StartRequest(FormRequestData request_data) {
-  // kRequestUploads take no IsolationInfo because Password Manager uploads when
-  // RenderFrameHostImpl::DidCommitNavigation() is called, in which case
-  // AutofillDriver::IsolationInfo() may crash because there is no committing
-  // NavigationRequest. Not setting an IsolationInfo is safe because no
-  // information about the response is passed to the renderer, or is otherwise
-  // visible to a page. See crbug/1176635#c22.
-#if BUILDFLAG(IS_IOS)
-  DCHECK(!request_data.isolation_info);
-#else
-  DCHECK(
-      (request_data.request_type == CrowdsourcingRequestType::kRequestUpload) ==
-      !request_data.isolation_info);
-#endif
-  // Get the URL and method to use for this request.
-  auto [request_url, method] = GetRequestURLAndMethod(request_data);
-
-  // Track the URL length for GET queries because the URL length can be in the
-  // thousands when rich metadata is enabled.
-  if (request_data.request_type == CrowdsourcingRequestType::kRequestQuery &&
-      method == "GET") {
-    base::UmaHistogramCounts100000(kUmaGetUrlLength,
-                                   request_url.spec().length());
-  }
-
-  auto resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = request_url;
-  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-  resource_request->method = method;
-
-  if (request_data.isolation_info) {
-    resource_request->trusted_params =
-        network::ResourceRequest::TrustedParams();
-    resource_request->trusted_params->isolation_info =
-        *request_data.isolation_info;
-  }
-
-  // Add Chrome experiment state to the request headers.
-  variations::AppendVariationsHeaderUnknownSignedIn(
-      request_url,
-      client_->IsOffTheRecord() ? variations::InIncognito::kYes
-                                : variations::InIncognito::kNo,
-      resource_request.get());
-
-  // Set headers specific to the API.
-  // Encode response serialized proto in base64 for safety.
-  resource_request->headers.SetHeader(kGoogEncodeResponseIfExecutable,
-                                      "base64");
-
-  // Add API key to the request if a key exists, and the endpoint is trusted by
-  // Google.
-  if (!api_key_.empty() && request_url.SchemeIs(url::kHttpsScheme) &&
-      google_util::IsGoogleAssociatedDomainUrl(request_url)) {
-    google_apis::AddAPIKeyToRequest(*resource_request, api_key_);
-  }
-
-  auto simple_loader = network::SimpleURLLoader::Create(
-      std::move(resource_request),
-      GetNetworkTrafficAnnotation(request_data.request_type));
-
-  // This allows reading the error message within the API response when status
-  // is not 200 (e.g., 400). Otherwise, URL loader will not give any content in
-  // the response when there is a failure, which makes debugging hard.
-  simple_loader->SetAllowHttpErrorResults(true);
-
-  if (method == "POST") {
-    static constexpr char content_type[] = "application/x-protobuf";
-    std::optional<std::string> payload =
-        GetAPIBodyPayload(request_data.payload, request_data.request_type);
-    if (!payload) {
-      return false;
-    }
-    // Attach payload data and add data format header.
-    simple_loader->AttachStringForUpload(std::move(payload).value(),
-                                         content_type);
-  }
-
-  // Transfer ownership of the loader into url_loaders_. Temporarily hang
-  // onto the raw pointer to use it as a key and to kick off the request;
-  // transferring ownership (std::move) invalidates the `simple_loader`
-  // variable.
-  auto* raw_simple_loader = simple_loader.get();
-  url_loaders_.push_back(std::move(simple_loader));
-  raw_simple_loader->SetTimeoutDuration(kFetchTimeout);
-  raw_simple_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
-      client_->GetURLLoaderFactory().get(),
-      base::BindOnce(&AutofillCrowdsourcingManager::OnSimpleLoaderComplete,
-                     base::Unretained(this), std::move(--url_loaders_.end()),
-                     std::move(request_data), base::TimeTicks::Now()));
-  return true;
+  // ScopedCallbackRunner completes queries with nullopt on destruction.
+  // Local autofill remains available without Google crowdsourcing.
+  return false;
 }
 
 void AutofillCrowdsourcingManager::CacheQueryRequest(

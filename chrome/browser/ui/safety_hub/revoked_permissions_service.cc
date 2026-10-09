@@ -43,7 +43,6 @@
 #include "components/permissions/permission_util.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safety_check/safety_check.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -167,43 +166,6 @@ RevokedPermissionsService::RevokedPermissionsService(
           &RevokedPermissionsService::OnPermissionsAutorevocationControlChanged,
           base::Unretained(this)));
 #endif  // BUILDFLAG(IS_ANDROID)
-
-    RevokedPermissionsOSNotificationDisplayManager*
-        notification_display_manager =
-            RevokedPermissionsOSNotificationDisplayManagerFactory::
-                GetForProfile(Profile::FromBrowserContext(browser_context_));
-#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
-    auto* v5_manager =
-        safe_browsing::V5GetHashProtocolManagerFactory::GetForBrowserContext(
-            browser_context_);
-#endif
-    abusive_notification_manager_ =
-        std::make_unique<AbusiveNotificationPermissionsManager>(
-#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
-            g_browser_process->safe_browsing_service()
-                ? g_browser_process->safe_browsing_service()->database_manager()
-                : nullptr,
-            v5_manager ? v5_manager->GetWeakPtr() : nullptr,
-#else
-            nullptr, nullptr,
-#endif
-            hcsm(), pref_change_registrar_->prefs());
-
-  pref_change_registrar_->Add(
-      prefs::kSafeBrowsingEnabled,
-      base::BindRepeating(
-          &RevokedPermissionsService::OnPermissionsAutorevocationControlChanged,
-          base::Unretained(this)));
-
-  if (base::FeatureList::IsEnabled(
-          features::kSafetyHubDisruptiveNotificationRevocation)) {
-    disruptive_notification_manager_ =
-        std::make_unique<DisruptiveNotificationPermissionsManager>(
-            browser_context, hcsm(),
-            site_engagement::SiteEngagementServiceFactory::GetForProfile(
-                browser_context_),
-            notification_display_manager);
-  }
 
   unused_site_permissions_manager_ =
       std::make_unique<UnusedSitePermissionsManager>(browser_context, prefs);
@@ -617,5 +579,5 @@ bool RevokedPermissionsService::IsUnusedSiteAutoRevocationEnabled() {
 }
 
 bool RevokedPermissionsService::IsAbusiveNotificationAutoRevocationEnabled() {
-  return safe_browsing::IsSafeBrowsingEnabled(*pref_change_registrar_->prefs());
+  return false;
 }

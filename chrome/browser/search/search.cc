@@ -96,6 +96,7 @@ enum NewTabURLState {
   NEW_TAB_URL_MAX
 };
 
+#if BUILDFLAG(IS_ANDROID)
 const TemplateURL* GetDefaultSearchProviderTemplateURL(Profile* profile) {
   if (profile) {
     TemplateURLService* template_url_service =
@@ -106,6 +107,7 @@ const TemplateURL* GetDefaultSearchProviderTemplateURL(Profile* profile) {
   }
   return nullptr;
 }
+#endif  // BUILDFLAG(IS_ANDROID)
 
 bool IsMatchingServiceWorker(const GURL& my_url, const GURL& document_url) {
   // The origin should match.
@@ -143,6 +145,7 @@ bool IsNTPOrRelatedURLHelper(const GURL& url, Profile* profile) {
                                     IsMatchingServiceWorker(url, new_tab_url));
 }
 
+#if BUILDFLAG(IS_ANDROID)
 bool IsURLAllowedForSupervisedUser(const GURL& url, Profile& profile) {
   if (!profile.IsChild()) {
     return true;
@@ -156,6 +159,7 @@ bool IsURLAllowedForSupervisedUser(const GURL& url, Profile& profile) {
   }
   return true;
 }
+#endif  // BUILDFLAG(IS_ANDROID)
 
 // Used to look up the URL to use for the New Tab page. Also tracks how we
 // arrived at that URL so it can be logged with UMA.
@@ -172,9 +176,8 @@ struct NewTabURLDetails {
       return NewTabURLDetails(GURL(), NEW_TAB_URL_INCOGNITO);
     }
 
-    const bool default_is_google = DefaultSearchProviderIsGoogle(profile);
-
 #if BUILDFLAG(IS_ANDROID)
+    const bool default_is_google = DefaultSearchProviderIsGoogle(profile);
     const bool is_desktop_android = IsWebUiNtpEnabledForDesktopAndroid();
     const GURL local_url(
         is_desktop_android ? chrome::ChromeUINewTabPageURLAsGURL() : GURL());
@@ -190,15 +193,6 @@ struct NewTabURLDetails {
         }
       }
     }
-#else
-    const GURL local_url(default_is_google
-                             ? chrome::ChromeUINewTabPageURLAsGURL()
-                             : GURL(chrome::kChromeUINewTabPageThirdPartyURL));
-    if (default_is_google) {
-      return NewTabURLDetails(local_url, NEW_TAB_URL_VALID);
-    }
-#endif
-
     const TemplateURL* template_url =
         GetDefaultSearchProviderTemplateURL(profile);
     if (!profile || !template_url) {
@@ -221,6 +215,11 @@ struct NewTabURLDetails {
     }
 
     return NewTabURLDetails(search_provider_url, NEW_TAB_URL_VALID);
+#else
+    const GURL local_url(chrome::kChromeUINewTabPageThirdPartyURL);
+    // Keep the local new-tab page; do not start Google's NTP service clients.
+    return NewTabURLDetails(local_url, NEW_TAB_URL_VALID);
+#endif
   }
 
   const GURL url;

@@ -106,15 +106,10 @@ void UpdateService::OnCrxStateChange(UpdateFoundCallback update_found_callback,
                                      const update_client::CrxUpdateItem& item) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
-  // Custom attributes can only be sent for NOT_UPDATED/UPDATE_FOUND events.
-  bool should_perform_action_on_omaha_attributes = false;
-
   switch (item.state) {
     case update_client::ComponentState::kUpToDate:
-      should_perform_action_on_omaha_attributes = true;
       break;
     case update_client::ComponentState::kCanUpdate:
-      should_perform_action_on_omaha_attributes = true;
       if (update_found_callback) {
         update_found_callback.Run(item.id, item.next_version);
       }
@@ -129,14 +124,6 @@ void UpdateService::OnCrxStateChange(UpdateFoundCallback update_found_callback,
     case update_client::ComponentState::kUpdateError:
     case update_client::ComponentState::kRun:
       break;
-  }
-
-  if (should_perform_action_on_omaha_attributes) {
-    base::DictValue attributes = GetExtensionOmahaAttributes(item);
-    // Note that it's important to perform actions even if |attributes| is
-    // empty, missing values may default to false and have associated logic.
-    ExtensionSystem::Get(browser_context_)
-        ->PerformActionBasedOnOmahaAttributes(item.id, attributes);
   }
 }
 

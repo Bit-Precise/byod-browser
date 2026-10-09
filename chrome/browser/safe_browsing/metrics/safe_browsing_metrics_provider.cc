@@ -17,15 +17,6 @@ SafeBrowsingMetricsProvider::~SafeBrowsingMetricsProvider() = default;
 
 void SafeBrowsingMetricsProvider::ProvideCurrentSessionData(
     metrics::ChromeUserMetricsExtension* uma_proto) {
-  Profile* profile = cached_profile_.GetMetricsProfile();
-
-  if (!profile)
-    return;
-
-  SafeBrowsingState state = GetSafeBrowsingState(*profile->GetPrefs());
-
-  base::UmaHistogramEnumeration(
-      "SafeBrowsing.Pref.MainProfile.SafeBrowsingState", state);
 }
 
 }  // namespace safe_browsing

@@ -109,11 +109,6 @@ void GeneratedPrefs::CreatePrefs() {
       content_settings::GeneratedThirdPartyCookieBlockingSettingPref>(profile_);
   prefs_[kGeneratedPasswordLeakDetectionPref] =
       std::make_unique<GeneratedPasswordLeakDetectionPref>(profile_);
-  prefs_[safe_browsing::kGeneratedSafeBrowsingPref] =
-      std::make_unique<safe_browsing::GeneratedSafeBrowsingPref>(profile_);
-  prefs_[safe_browsing::kGeneratedSecuritySettingsBundlePref] =
-      std::make_unique<safe_browsing::GeneratedSecuritySettingsBundlePref>(
-          profile_);
   prefs_[content_settings::kGeneratedNotificationPref] = std::make_unique<
       content_settings::GeneratedPermissionPromptingBehaviorPref>(
       profile_, ContentSettingsType::NOTIFICATIONS);

@@ -78,7 +78,6 @@ const char kMessageTypeDeletedMessagesKey[] = "deleted_messages";
 const char kMessageTypeKey[] = "message_type";
 const char kMessageTypeSendErrorKey[] = "send_error";
 const char kSubtypeKey[] = "subtype";
-const char kSendMessageFromValue[] = "gcm@chrome.com";
 const int64_t kDefaultUserSerialNumber = 0LL;
 const int kDestroyGCMStoreDelayMS = 5 * 60 * 1000;  // 5 minutes.
 constexpr base::TimeDelta kTokenInvalidationInterval = base::Days(7);
@@ -99,61 +98,6 @@ GCMClient::Result ToGCMClientResult(MCSClient::MessageSendStatus status) {
       NOTREACHED();
   }
   return GCMClientImpl::UNKNOWN_ERROR;
-}
-
-void ToCheckinProtoVersion(
-    const GCMClient::ChromeBuildInfo& chrome_build_info,
-    checkin_proto::ChromeBuildProto* android_build_info) {
-  checkin_proto::ChromeBuildProto_Platform platform =
-      checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
-  switch (chrome_build_info.platform) {
-    case GCMClient::PLATFORM_WIN:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_WIN;
-      break;
-    case GCMClient::PLATFORM_MAC:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_MAC;
-      break;
-    case GCMClient::PLATFORM_LINUX:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
-      break;
-    case GCMClient::PLATFORM_IOS:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_IOS;
-      break;
-    case GCMClient::PLATFORM_ANDROID:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_ANDROID;
-      break;
-    case GCMClient::PLATFORM_CROS:
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_CROS;
-      break;
-    case GCMClient::PLATFORM_UNSPECIFIED:
-      // For unknown platform, return as LINUX.
-      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
-      break;
-  }
-  android_build_info->set_platform(platform);
-
-  checkin_proto::ChromeBuildProto_Channel channel =
-      checkin_proto::ChromeBuildProto_Channel_CHANNEL_UNKNOWN;
-  switch (chrome_build_info.channel) {
-    case GCMClient::CHANNEL_STABLE:
-      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_STABLE;
-      break;
-    case GCMClient::CHANNEL_BETA:
-      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_BETA;
-      break;
-    case GCMClient::CHANNEL_DEV:
-      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_DEV;
-      break;
-    case GCMClient::CHANNEL_CANARY:
-      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_CANARY;
-      break;
-    case GCMClient::CHANNEL_UNKNOWN:
-      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_UNKNOWN;
-      break;
-  }
-  android_build_info->set_channel(channel);
-
-  android_build_info->set_chrome_version(chrome_build_info.version);
 }
 
 MessageType DecodeMessageType(const std::string& value) {
@@ -296,38 +240,6 @@ void GCMClientImpl::Initialize(
 }
 
 void GCMClientImpl::Start(StartMode start_mode) {
-  DCHECK_NE(UNINITIALIZED, state_);
-  DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-
-  if (state_ == LOADED) {
-    // Start the GCM if not yet.
-    if (start_mode == IMMEDIATE_START) {
-      // Give up the scheduling to wipe out the store since now some one starts
-      // to use GCM.
-      destroying_gcm_store_ptr_factory_.InvalidateWeakPtrs();
-
-      StartGCM();
-    }
-    return;
-  }
-
-  // The delay start behavior will be abandoned when Start has been called
-  // once with IMMEDIATE_START behavior.
-  if (start_mode == IMMEDIATE_START)
-    start_mode_ = IMMEDIATE_START;
-
-  // Bail out if the loading is not started or completed.
-  if (state_ != INITIALIZED)
-    return;
-
-  // Once the loading is completed, the check-in will be initiated.
-  // If we're in lazy start mode, don't create a new store since none is really
-  // using GCM functionality yet.
-  gcm_store_->Load((start_mode == IMMEDIATE_START) ? GCMStore::CREATE_IF_MISSING
-                                                   : GCMStore::DO_NOT_CREATE,
-                   base::BindOnce(&GCMClientImpl::OnLoadCompleted,
-                                  weak_ptr_factory_.GetWeakPtr()));
-  state_ = LOADING;
 }
 
 void GCMClientImpl::OnLoadCompleted(
@@ -430,28 +342,7 @@ void GCMClientImpl::StartGCM() {
 }
 
 void GCMClientImpl::InitializeMCSClient() {
-  DCHECK(network_connection_tracker_);
-  std::vector<GURL> endpoints;
-  endpoints.push_back(gservices_settings_.GetMCSMainEndpoint());
-  GURL fallback_endpoint = gservices_settings_.GetMCSFallbackEndpoint();
-  if (fallback_endpoint.is_valid())
-    endpoints.push_back(fallback_endpoint);
-  connection_factory_ = internals_builder_->BuildConnectionFactory(
-      endpoints, GetGCMBackoffPolicy(), get_socket_factory_callback_,
-      io_task_runner_, &recorder_, network_connection_tracker_);
-  connection_factory_->SetConnectionListener(this);
-  mcs_client_ = internals_builder_->BuildMCSClient(
-      chrome_build_info_.version, clock_, connection_factory_.get(),
-      gcm_store_.get(), io_task_runner_, &recorder_);
-
-  mcs_client_->Initialize(
-      base::BindRepeating(&GCMClientImpl::OnMCSError,
-                          weak_ptr_factory_.GetWeakPtr()),
-      base::BindRepeating(&GCMClientImpl::OnMessageReceivedFromMCS,
-                          weak_ptr_factory_.GetWeakPtr()),
-      base::BindRepeating(&GCMClientImpl::OnMessageSentToMCS,
-                          weak_ptr_factory_.GetWeakPtr()),
-      std::move(load_result_));
+  // BYOD does not create Google's MCS connection.
 }
 
 void GCMClientImpl::OnFirstTimeDeviceCheckinCompleted(
@@ -482,8 +373,6 @@ void GCMClientImpl::OnReady(const std::vector<AccountMapping>& account_mappings,
 void GCMClientImpl::StartMCSLogin() {
   DCHECK_EQ(READY, state_);
   DCHECK(device_checkin_info_.IsValid());
-  mcs_client_->Login(device_checkin_info_.android_id,
-                     device_checkin_info_.secret);
 }
 
 void GCMClientImpl::DestroyStoreWhenNotNeeded() {
@@ -554,8 +443,6 @@ void GCMClientImpl::SetLastTokenFetchTime(const base::Time& time) {
 void GCMClientImpl::UpdateHeartbeatTimer(
     std::unique_ptr<base::RetainingOneShotTimer> timer) {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-  DCHECK(mcs_client_);
-  mcs_client_->UpdateHeartbeatTimer(std::move(timer));
 }
 
 void GCMClientImpl::AddInstanceIDData(const std::string& app_id,
@@ -598,35 +485,14 @@ void GCMClientImpl::GetInstanceIDData(const std::string& app_id,
 void GCMClientImpl::AddHeartbeatInterval(const std::string& scope,
                                          int interval_ms) {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-  DCHECK(mcs_client_);
-  mcs_client_->AddHeartbeatInterval(scope, interval_ms);
 }
 
 void GCMClientImpl::RemoveHeartbeatInterval(const std::string& scope) {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-  DCHECK(mcs_client_);
-  mcs_client_->RemoveHeartbeatInterval(scope);
 }
 
 void GCMClientImpl::StartCheckin() {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-
-  // Make sure no checkin is in progress.
-  if (checkin_request_)
-    return;
-
-  checkin_proto::ChromeBuildProto chrome_build_proto;
-  ToCheckinProtoVersion(chrome_build_info_, &chrome_build_proto);
-
-  CheckinRequest::RequestInfo request_info(
-      device_checkin_info_.android_id, device_checkin_info_.secret,
-      gservices_settings_.digest(), chrome_build_proto);
-  checkin_request_ = std::make_unique<CheckinRequest>(
-      gservices_settings_.GetCheckinURL(), request_info, GetGCMBackoffPolicy(),
-      base::BindOnce(&GCMClientImpl::OnCheckinCompleted,
-                     weak_ptr_factory_.GetWeakPtr()),
-      url_loader_factory_, io_task_runner_, &recorder_);
-  checkin_request_->Start();
 }
 
 void GCMClientImpl::OnCheckinCompleted(
@@ -683,24 +549,6 @@ void GCMClientImpl::SetGServicesSettingsCallback(bool success) {
 
 void GCMClientImpl::SchedulePeriodicCheckin() {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-
-  // Make sure no checkin is in progress.
-  if (checkin_request_.get() || !device_checkin_info_.accounts_set)
-    return;
-
-  // There should be only one periodic checkin pending at a time. Removing
-  // pending periodic checkin to schedule a new one.
-  periodic_checkin_ptr_factory_.InvalidateWeakPtrs();
-
-  base::TimeDelta time_to_next_checkin = GetTimeToNextCheckin();
-  if (time_to_next_checkin.is_negative())
-    time_to_next_checkin = base::TimeDelta();
-
-  io_task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(&GCMClientImpl::StartCheckin,
-                     periodic_checkin_ptr_factory_.GetWeakPtr()),
-      time_to_next_checkin);
 }
 
 base::TimeDelta GCMClientImpl::GetTimeToNextCheckin() const {
@@ -1120,25 +968,6 @@ void GCMClientImpl::Send(const std::string& app_id,
                          const OutgoingMessage& message) {
   DCHECK_EQ(state_, READY);
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
-
-  mcs_proto::DataMessageStanza stanza;
-  stanza.set_ttl(message.time_to_live);
-  stanza.set_sent(clock_->Now().ToInternalValue() /
-                  base::Time::kMicrosecondsPerSecond);
-  stanza.set_id(message.id);
-  stanza.set_from(kSendMessageFromValue);
-  stanza.set_to(receiver_id);
-  stanza.set_category(app_id);
-
-  for (auto iter = message.data.begin(); iter != message.data.end(); ++iter) {
-    mcs_proto::AppData* app_data = stanza.add_app_data();
-    app_data->set_key(iter->first);
-    app_data->set_value(iter->second);
-  }
-
-  MCSMessage mcs_message(stanza);
-  DVLOG(1) << "MCS message size: " << mcs_message.size();
-  mcs_client_->SendMessage(mcs_message);
 }
 
 std::string GCMClientImpl::GetStateString() const {
